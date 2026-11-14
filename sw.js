@@ -13,7 +13,7 @@
 //    every voice it has used in "kokoro-voices"; keeping them here too would store them twice.
 //  - Never touched: test files (test/), this file, other websites.
 "use strict";
-const VERSION = "37";
+const VERSION = "38";
 const PAGE = "ldr-page-v" + VERSION;
 const FILES = "ldr-files-1";
 const SHELL = ["./", "manifest.webmanifest", "icon/long-drive-reader-icon.png"];
@@ -24,6 +24,7 @@ const CDN = [
   "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/",
   "https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/",
   "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/",
+  "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/", // v38: the fast voices' runtime
   "https://fonts.gstatic.com/"
 ];
 const FONT_CSS = "https://fonts.googleapis.com/css2";

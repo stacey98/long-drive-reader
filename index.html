@@ -347,7 +347,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       <h3>Use it like an app</h3>
       <p class="note">In Safari, tap the Share button, then Add to Home Screen. It opens straight to your last document, at the sentence where you stopped. For a proper icon instead of a blank one: save the Long Drive Reader icon to Photos, then in the Shortcuts app make a shortcut with the action "Open URLs" and this page's link, choose Add to Home Screen, and pick the icon from Photos.</p>
       <p class="note">On the website copy of this app (not inside claude.ai), the app keeps a copy of itself on the phone after a visit online, so it can open with no signal. Your Library readings are on the phone anyway.</p>
-      <p class="note">Version 37 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
+      <p class="note">Version 38 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
     </div>
   </div>
 </section>
@@ -2322,7 +2322,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const b = e.target.closest(".row[data-who]"); if (!b) return;
     if (useNatural()) {
       // Natural voice: step through the other 27 voices (never the narrator's).
-      const who = b.dataset.who, ids = KOKORO.VOICES.map(v => v[0]).filter(id => id !== nvVoiceId());
+      const who = b.dataset.who, ids = (isST(nvVoiceId()) ? ST_VOICES : KOKORO.VOICES).map(v => v[0]).filter(id => id !== nvVoiceId());
       const cur = nvCastMap(doc)[who], next = ids[(ids.indexOf(cur && cur.voice) + 1) % ids.length];
       settings.nvCast = settings.nvCast || {};
       settings.nvCast[doc.key] = Object.assign({}, settings.nvCast[doc.key], { [who]: next });
@@ -2609,7 +2609,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function setRate(r, restart) {
     settings.rate = Math.round(r * 100) / 100; saveSettings(); syncSettingsUI();
     // Natural voice: the audio element changes speed at once, keeping its pitch (no restart needed).
-    if (useNatural()) { nvApplyRate(nvAudio, nvClipRate({ spd: nv.curSpd })); return; }
+    if (useNatural()) { nvApplyRate(nvAudio, nvClipRate({ eff: nv.curEff || 1 })); return; }
     // (hardStop clears this timer, so pausing right after a speed tap stays paused.)
     if (restart && playing) { clearTimeout(speedTimer); speedTimer = setTimeout(() => { if (playing) speakFrom(idx); }, 250); }
   }
@@ -3200,6 +3200,12 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       const big = nvCastMap({ key: "unit-cast", cast: many });
       eq("natural cast: 10 characters each get their own voice; 16 share 15 (first and last)", Object.values(ten).every(c => c.own) && big.C0.voice === big.C15.voice && !big.C0.own && big.C1.own && Object.values(big).every(c => c.voice !== "af_heart"), true);
       eq("natural cast: names not read when everyone has a voice", nvSayNames(cd) + "|" + nvSayNames({ key: "unit-cast", cast: many }), "false|true");
+      // v38: the fast voices (Supertonic)
+      eq("fast voices: pace made at 1/1.3/1.5/2× (and with the setting off at 2×)", [1, 1.3, 1.5, 2].map(r => nvStSpd(r)).join(",") + "|" + nvStSpd(2, false), "1,1.3,1.5,1.5|1");
+      settings.nvVoice = "st_F1";
+      eq("fast voices: chosen, named, and characters get other fast voices", nvVoiceId() + "|" + nvVoiceName("st_F1") + "|" + Object.values(nvCastMap({ key: "unit-st", cast: ["A", "B"] })).map(c => c.voice).join(","), "st_F1|Fast woman 1|st_F2,st_M1");
+      eq("fast voices: a clip made at 1.5 plays at 2/1.5 to be heard at 2×", Math.round(2 / nvClipEff({ eff: 1.5 }) * 1000) / 1000, 1.333);
+      settings.nvVoice = keep.nvVoice;
       settings.nvCast = { "unit-cast": { B: "am_puck" } };
       eq("natural cast: a voice picked by tapping is kept", nvCastMap(cd).B.voice, "am_puck");
       settings.nvCast = {};
@@ -3353,6 +3359,8 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const SOUNDS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ||
       (/AppleWebKit/.test(ua) && /Safari\//.test(ua) && !/Chrome|Chromium|Edg|OPR|Android/.test(ua)) ||
       /[?&]sounds=js\b/.test(location.search) ? "js" : "espeak";
+    // v38: quality steps for the fast voices (Supertonic). She heard 2 steps cut words off; 4 and 8 sounded good.
+    const ST_STEPS = 8;
     // A helper that runs the model in its own background thread (Web Worker). Several of them speak different
     // sentences at the same time, which is how the natural voice can keep ahead of playback.
     const WORKER_SRC = `
@@ -3384,6 +3392,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         if (/ort-plain\\.wasm|ort-wasm-simd-threaded\\.jsep\\.wasm/.test(u)) return new Response(await join("ort"), { headers: { "Content-Type": "application/wasm" } });
         if ((m = /Kokoro-82M-v1\\.0-ONNX\\/resolve\\/main\\/(config\\.json|tokenizer\\.json|tokenizer_config\\.json)/.exec(u))) return of(base + m[1]);
         if ((m = /Kokoro-82M-v1\\.0-ONNX\\/resolve\\/main\\/voices\\/([a-z]{2}_[a-z]+)\\.bin/.exec(u))) return of(base + "voices/" + m[1] + ".wasm");
+        if (u.indexOf("https://huggingface.co/Supertone/supertonic-2/") === 0) return new Response(await stGet(u)); // v38: kept copies
         return of(input, init);
       };
       let ttsP = null;
@@ -3405,9 +3414,53 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         })();
         return ttsP;
       }
+      // v38: the fast voices (Supertonic 2). Its files come from huggingface.co once and are kept in the browser's
+      // file cache "supertonic-2" (so later visits and offline use don't download 263 MB again).
+      const ST_HF = "https://huggingface.co/Supertone/supertonic-2/resolve/main/";
+      const ST_HELPER = new URL("../supertonic/st-helper.mjs", base).href;
+      async function stGet(url, big) {
+        let cache = null;
+        try { cache = await caches.open("supertonic-2"); } catch (err) { cache = null; }
+        if (cache) { const hit = await cache.match(url); if (hit) return hit.arrayBuffer(); }
+        if (big && !stDl) { stDl = true; self.postMessage({ dl: "st", on: true }); }
+        const r = await of(url);
+        if (!r.ok) throw new Error("couldn't download the fast voice (" + r.status + ")");
+        let blob = big ? await readAll(r) : await r.blob();
+        if (!(blob instanceof Blob)) blob = new Blob([blob]);
+        if (cache) { try { await cache.put(url, new Response(blob)); } catch (err) { /* full: use it this time anyway */ } }
+        return blob.arrayBuffer();
+      }
+      let stP = null, stDl = false;
+      function st() {
+        if (!stP) stP = (async () => {
+          const H = await import(ST_HELPER);
+          H.ort.env.wasm.numThreads = 1;
+          H.ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+          const td = new TextDecoder();
+          const cfgs = JSON.parse(td.decode(await stGet(ST_HF + "onnx/tts.json")));
+          const indexer = JSON.parse(td.decode(await stGet(ST_HF + "onnx/unicode_indexer.json")));
+          const opt = { executionProviders: ["wasm"], graphOptimizationLevel: "all" }, sess = [];
+          for (const n of ["duration_predictor", "text_encoder", "vector_estimator", "vocoder"])
+            sess.push(await H.ort.InferenceSession.create(new Uint8Array(await stGet(ST_HF + "onnx/" + n + ".onnx", true)), opt));
+          if (stDl) { stDl = false; self.postMessage({ dl: "st", on: false }); }
+          return { H, tts: new H.TextToSpeech(cfgs, new H.UnicodeProcessor(indexer), sess[0], sess[1], sess[2], sess[3]), styles: {} };
+        })();
+        stP.catch(() => { stP = null; if (stDl) { stDl = false; self.postMessage({ dl: "st", on: false }); } });
+        return stP;
+      }
       self.onmessage = async e => {
-        const { id, cmd, text, voice, speed } = e.data;
+        const { id, cmd, text, voice, speed, engine } = e.data;
         try {
+          if (cmd === "init" && engine === "st") { await st(); self.postMessage({ id, ok: true }); return; }
+          if (cmd === "gen" && /^st_[FM][1-5]$/.test(voice || "")) {
+            const m = await st(), sv = voice.slice(3);
+            if (!m.styles[sv]) m.styles[sv] = await m.H.loadVoiceStyle([ST_HF + "voice_styles/" + sv + ".json"]);
+            let a, sr = m.tts.sampleRate;
+            if (!/[\\p{L}\\p{N}]/u.test(text || "")) a = new Float32Array(Math.round(sr / 10)); // nothing sayable: 0.1 s of silence
+            else a = Float32Array.from((await m.tts.call(text, "en", m.styles[sv], ${ST_STEPS}, speed || 1.05)).wav);
+            self.postMessage({ id, audio: a, sr }, [a.buffer]);
+            return;
+          }
           const t = await tts();
           if (cmd === "gen") {
             let a;
@@ -3453,7 +3506,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         if (opts.onDead) opts.onDead(err);
       };
       const call = msg => new Promise((resolve, reject) => { const id = ++n; waiting.set(id, { resolve, reject }); w.postMessage(Object.assign({ id }, msg)); });
-      return { ready: () => call({ cmd: "init" }), gen: (text, voice, speed) => call({ cmd: "gen", text, voice, speed }), genIds: (ids, voice) => call({ cmd: "ids", ids, voice }), stop: () => w.terminate() };
+      return { ready: engine => call({ cmd: "init", engine }), gen: (text, voice, speed) => call({ cmd: "gen", text, voice, speed }), genIds: (ids, voice) => call({ cmd: "ids", ids, voice }), stop: () => w.terminate() };
     }
     return { load, VOICES, base, makeWorker, SOUNDS };
   })();
@@ -3487,7 +3540,9 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     if (!NV_ISO || !c || !(c.threads >= 1 && c.threads <= 8) || !(c.helpers >= 1 && c.helpers <= 6)) return { threads: 1, helpers: 0 };
     return { threads: c.threads, helpers: c.helpers };
   }
-  const nvMaxHelpers = () => nvCfg().helpers || (NV_IOS ? NV_IOS_MAX : NV_MAX);
+  // v38: a fast (Supertonic) voice needs one helper on iPhone (4.9× real time there; its 263 MB model leaves no room
+  // for a second), two elsewhere. (settings.nvVoice is read directly: this runs before nvVoiceId exists.)
+  const nvMaxHelpers = () => /^st_/.test(settings.nvVoice || "") ? (NV_IOS ? 1 : Math.min(2, NV_MAX)) : nvCfg().helpers || (NV_IOS ? NV_IOS_MAX : NV_MAX);
   const NV_SLOW_MSG ="This phone is slower than the voice. Tip: tap Prepare whole reading before you drive.";
   const nvAudio = $("nvAudio");
   const nv = {
@@ -3514,9 +3569,25 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     // v32: the JavaScript words-to-sounds files (used on iPhone)
     "g2p/say.mjs?v=32", "g2p/index.mjs", "g2p/core.mjs", "g2p/en-g2p.mjs", "g2p/utils-Bo_ZN3X7.mjs", "g2p/anyascii.mjs",
     "g2p/en/exceptions.mjs", "g2p/en/initialisms.mjs", "g2p/en/homographs.mjs", "g2p/en/compound-parts.mjs"]
-    .map(f => KOKORO.base + f).concat(KOKORO.base + "kokoro-web.mjs", "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js"); // v34: the helpers load kokoro-js from here (or jsdelivr)
-  const nvVoiceId = () => KOKORO.VOICES.slice(0, 5).some(v => v[0] === settings.nvVoice) ? settings.nvVoice : "af_heart"; // v30: one of the 5 offered
-  const nvVoiceRow = id => KOKORO.VOICES.find(v => v[0] === id) || KOKORO.VOICES[0];
+    .map(f => KOKORO.base + f).concat(KOKORO.base + "kokoro-web.mjs", "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js", // v34: the helpers load kokoro-js from here (or jsdelivr)
+      new URL("supertonic/st-helper.mjs", document.baseURI).href, "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.bundle.min.mjs", "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort-wasm-simd-threaded.wasm"); // v38: the fast voices
+  // v38 (2026-11-14): the fast voices, Supertonic 2 (see runSupertonicTest). On her iPhone it made speech 4.9× real
+  // time with 4 steps and 3.4× with 8 on one core (Kokoro: 0.48×); she found 4 and 8 steps good and 2 steps bad
+  // ("cuts off the words, like the numbers"), so 8 steps are used. Ids "st_" + the model's style name.
+  const ST_VOICES = [
+    ["st_F1", "Fast woman 1", "Supertonic woman (the one in the test)", "F1"], ["st_F2", "Fast woman 2", "Supertonic woman", "F2"],
+    ["st_M1", "Fast man 1", "Supertonic man (the one in the test)", "M1"], ["st_M2", "Fast man 2", "Supertonic man", "M2"],
+    ["st_F3", "Fast woman 3", "Supertonic woman", "F3"], ["st_F4", "Fast woman 4", "Supertonic woman", "F4"], ["st_F5", "Fast woman 5", "Supertonic woman", "F5"],
+    ["st_M3", "Fast man 3", "Supertonic man", "M3"], ["st_M4", "Fast man 4", "Supertonic man", "M4"], ["st_M5", "Fast man 5", "Supertonic man", "M5"]
+  ];
+  const ST_BASE_SPEED = 1.05; // Supertonic's own default pace (its web demo); faster listening multiplies it
+  const ST_BYTES = 263e6; // the four Supertonic 2 model files
+  const ST_PICK = 4; // the first 4 are offered in the voice list; all 10 are there for characters in a play
+  const isST = id => /^st_[FM][1-5]$/.test(String(id || ""));
+  for (const v of ST_VOICES) NV_IDS.add(v[0]);
+  const nvVoiceId = () => KOKORO.VOICES.slice(0, 5).some(v => v[0] === settings.nvVoice) || ST_VOICES.slice(0, ST_PICK).some(v => v[0] === settings.nvVoice) ? settings.nvVoice : "af_heart"; // v30: one of the 5 offered (v38: or of the 4 fast ones)
+  const nvVoiceRow = id => KOKORO.VOICES.find(v => v[0] === id) || ST_VOICES.find(v => v[0] === id) || KOKORO.VOICES[0];
+  const nvEngine = id => isST(id) ? "st" : "kokoro";
   const nvVoiceName = id => nvVoiceRow(id)[1];
   const nvVoiceDesc = id => nvVoiceRow(id)[2];
   // The natural voice is in use: chosen in settings, and it hasn't failed to start on this visit.
@@ -3536,7 +3607,11 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   const nvEff = s => NV_EFF[s] || 1;
   function nvGenArgs(text, voice, spd) { return { text, voice, speed: spd || 1 }; }
   // The playback rate for a clip made at Kokoro speed `spd`, so that it is heard at the listening speed.
-  const nvClipRate = c => settings.rate / nvEff(c && c.spd || 1);
+  // v38: a clip carries `eff` (how much faster than normal it was made); Supertonic divides every sound's length by
+  // its speed, so there eff = the speed asked for (capped at 1.5, the top of Supertonic's recommended 0.9–1.5).
+  const nvClipEff = c => c && c.eff > 0 ? c.eff : nvEff(c && c.spd || 1);
+  const nvClipRate = c => settings.rate / nvClipEff(c);
+  const nvStSpd = (rate, on) => on === false || !(rate > 1.1) ? 1 : Math.min(1.5, Math.round(rate * 20) / 20);
   function nvApplyRate(el, rate) {
     try { el.preservesPitch = true; el.webkitPreservesPitch = true; el.mozPreservesPitch = true; el.defaultPlaybackRate = rate; el.playbackRate = rate; } catch {}
   }
@@ -3584,10 +3659,10 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function nvCastMap(d) {
     const cast = d.cast || [], out = {}, narr = nvVoiceId();
     if (!cast.length) return out;
-    const others = KOKORO.VOICES.map(v => v[0]).filter(id => id !== narr);
+    const others = (isST(narr) ? ST_VOICES : KOKORO.VOICES).map(v => v[0]).filter(id => id !== narr); // v38: same kind as the narrator
     const saved = (settings.nvCast || {})[d.key] || {}, count = new Map();
     cast.forEach((name, k) => {
-      const v = NV_IDS.has(saved[name]) ? saved[name] : others[k % others.length];
+      const v = NV_IDS.has(saved[name]) && isST(saved[name]) === isST(narr) ? saved[name] : others[k % others.length];
       out[name] = { voice: v, shift: 0 };
       count.set(v, (count.get(v) || 0) + 1);
     });
@@ -3693,7 +3768,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     return true;
   }
   function nvAddHelper() {
-    const h = { id: ++nv.hid, state: "starting", rtf: 0, job: null, w: null, timer: null };
+    const h = { id: ++nv.hid, state: "starting", rtf: 0, job: null, w: null, timer: null, engine: nvEngine(nvVoiceId()) };
     // A helper that shows no sign of life for 2 minutes while starting (no download progress) is given up on.
     const arm = () => { clearTimeout(h.timer); h.timer = setTimeout(() => { if (h.state === "starting") nvHelperDied(h, new Error("it took too long to start")); }, 120000); };
     nv.helpers.push(h);
@@ -3712,7 +3787,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       });
     } catch (e) { nvHelperDied(h, e); return; }
     arm(); nvStatus();
-    h.w.ready().then(() => {
+    h.w.ready(h.engine).then(() => {
       clearTimeout(h.timer);
       if (h.state !== "starting") return;
       h.state = "ready"; nv.everReady = true;
@@ -3785,20 +3860,22 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function nvAssign(h, job) { if (!h || !job) return; h.job = job; job.t0 = Date.now(); nv.inflight.set(job.key, job); nvRun(h, job); }
   async function nvRun(h, job) {
     const t0 = performance.now();
-    const spd = job.say ? 1 : nvSpdFor(settings.rate, settings.nvFast); // v34: voice samples stay at the normal pace
+    const st = isST(job.v); // v38: a fast (Supertonic) voice
+    const spd = job.say ? 1 : st ? nvStSpd(settings.rate, settings.nvFast) : nvSpdFor(settings.rate, settings.nvFast); // v34: voice samples stay at the normal pace
+    const eff = st ? spd : nvEff(spd);
     try {
       const outs = [];
       for (const p of job.pieces) {
-        const a = nvGenArgs(p.text, p.voice, spd);
+        const a = nvGenArgs(p.text, p.voice, st ? spd * ST_BASE_SPEED : spd);
         outs.push(await nvTimeout(h.w.gen(a.text, a.voice, a.speed), nvGenLimit(h, job)));
       }
       if (h.state === "dead" || h.job !== job) return;
-      const sr = outs[0].sr || 24000, pcm = nvToPcm(outs.map(o => o.audio), Math.round(sr * 0.25 / nvEff(spd)));
+      const sr = outs[0].sr || 24000, pcm = nvToPcm(outs.map(o => o.audio), Math.round(sr * 0.25 / eff));
       // dur = how long it lasts at 1× (what the planning counts in), so a clip made faster counts as the same speech
-      const took = (performance.now() - t0) / 1000, dur = pcm.length / sr * nvEff(spd);
+      const took = (performance.now() - t0) / 1000, dur = pcm.length / sr * eff;
       if (took > 0.05) h.rtf = h.rtf ? h.rtf * 0.6 + dur / took * 0.4 : dur / took; // measured speed of this helper
       h.job = null; nv.inflight.delete(job.key); nv.fails.delete(job.key);
-      nvDone(job, { pcm, sr, dur, spd });
+      nvDone(job, { pcm, sr, dur, spd, eff });
     } catch (e) {
       if (h.state === "dead" || h.job !== job) return;
       const msg = nvWhy(e);
@@ -3839,7 +3916,8 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const st = nv.stored;
     audioDb.get(key).then(rec => {
       if (!rec || !rec.pcm) { st.set.delete(key); return; }
-      const spd = NV_EFF[rec.spd] ? rec.spd : 1, pcm = new Int16Array(rec.pcm), sr = rec.sr || 24000, c = { pcm, sr, dur: pcm.length / sr * nvEff(spd), spd };
+      const spd = NV_EFF[rec.spd] ? rec.spd : 1, eff = rec.eff > 0 && rec.eff <= 3 ? rec.eff : nvEff(spd);
+      const pcm = new Int16Array(rec.pcm), sr = rec.sr || 24000, c = { pcm, sr, dur: pcm.length / sr * eff, spd, eff };
       if (nv.winKeys.has(key) || nv.waitKey === key) nv.mem.set(key, c);
       if (nv.waitKey === key && nv.cur && nv.cur.key === key) nvStartChunk(c, nv.cur.job, nv.cur.my);
     }, e => { console.warn(e); st.set.delete(key); })
@@ -3850,7 +3928,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     if (p && p.cancelled) return;
     const buf = c.pcm.byteOffset === 0 && c.pcm.byteLength === c.pcm.buffer.byteLength ? c.pcm.buffer : c.pcm.slice().buffer;
     if (p) p.puts++;
-    audioDb.put({ id: job.key, rk: job.rk, v: job.v, i: job.i, sr: c.sr, spd: c.spd || 1, pcm: buf }).then(() => {
+    audioDb.put({ id: job.key, rk: job.rk, v: job.v, i: job.i, sr: c.sr, spd: c.spd || 1, eff: nvClipEff(c), pcm: buf }).then(() => {
       if (p) p.puts--;
       if (nv.stored.prefix && job.key.startsWith(nv.stored.prefix)) nv.stored.set.add(job.key);
       if (p && !p.some) { p.some = true; libPatch(job.rk, { nvSome: true }); }
@@ -4093,7 +4171,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const s = nvStateNow();
     if (s === "loading") {
       // The model may come from the browser's own copy (an earlier visit); then only the 22 MB runtime is downloaded.
-      if (nv.dling && nv.dling.size) { const tot = nv.dlKinds.has("model") ? NV_BYTES : NV_ORT_BYTES; return `step 1 of 3: downloading the voice, ${Math.min(Math.round(nv.dl / 1e6), Math.round(tot / 1e6))} of ${Math.round(tot / 1e6)} MB`; }
+      if (nv.dling && nv.dling.size) { const tot = nv.dlKinds.has("st") ? ST_BYTES : nv.dlKinds.has("model") ? NV_BYTES : NV_ORT_BYTES; return `step 1 of 3: downloading the voice, ${Math.min(Math.round(nv.dl / 1e6), Math.round(tot / 1e6))} of ${Math.round(tot / 1e6)} MB`; }
       const t = nvSecs(nv.upT0 || nv.loadT0);
       return `step 2 of 3: starting the voice · ${t} s${nv.deaths ? ` · try ${nv.deaths + 1}` : ""}${t >= 90 ? " (taking longer than it should)" : ""}`;
     }
@@ -4200,11 +4278,34 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       }
       box.appendChild(g);
     }
+    // v38: the fast voices (Supertonic 2), offered after the usual ones.
+    const h = document.createElement("p"); h.className = "vlabel"; h.textContent = "Fast voices · keep up at 2× on iPhone"; box.appendChild(h);
+    const g = document.createElement("div"); g.className = "group";
+    for (const [id, name, desc] of ST_VOICES.slice(0, ST_PICK)) {
+      const row = document.createElement("div");
+      row.className = "row vrow";
+      row.innerHTML = '<button class="pick" role="radio"><span class="grow"><span class="nm"></span><small></small></span><span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span></button><button class="pbtn">Listen</button>';
+      const b = row.querySelector(".pick"), l = row.querySelector(".pbtn");
+      b.dataset.nv = id; b.setAttribute("aria-checked", String(id === cur));
+      b.querySelector(".nm").textContent = name;
+      b.querySelector("small").textContent = desc + " · 263 MB once";
+      l.dataset.listen = id; l.setAttribute("aria-label", `Listen to ${name}`);
+      g.appendChild(row);
+    }
+    box.appendChild(g);
+  }
+  // v38: the chosen voice moved between the usual voices (Kokoro) and the fast ones (Supertonic): the helpers hold the
+  // other kind of model, so they are replaced (made audio stays; it is kept per voice).
+  function nvSwitchEngine() {
+    if (nv.prep) nvPrepStop(false);
+    for (const h of nv.helpers) nvKill(h);
+    nv.helpers = []; nv.inflight.clear(); nv.everReady = false; nv.loader = null; nv.madeAny = false; nv.dl = 0;
+    nv.failed = false; nv.why = ""; nv.deaths = 0; nv.slowShown = false; nv.maxN = nvMaxHelpers();
   }
   function renderVoiceSection() {
     const nat = !!settings.natural;
     document.querySelectorAll("#engineSeg button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.v === "natural") === nat)));
-    $("engineNote").textContent = nat ? "Downloads about 115 MB once (use Wi-Fi). Runs on this device; your PDFs never leave it. Tap a voice to choose it and hear it."
+    $("engineNote").textContent = nat ? "Downloads once (use Wi-Fi): about 115 MB for the usual voices, 263 MB for the fast ones. Runs on this device; your PDFs never leave it. Tap a voice to choose it and hear it."
       : "Using the voices built into this phone. The natural AI voice (beta) sounds much more like a person.";
     $("nvBox").hidden = !nat; $("phoneBox").hidden = nat;
     $("flowNote").textContent = nat ? "The natural voice reads each sentence in one go, so this only changes the phone voice."
@@ -4233,7 +4334,9 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       return;
     }
     const b = e.target.closest(".pick[data-nv]"); if (!b) return;
+    const wasEngine = nvEngine(nvVoiceId());
     settings.nvVoice = b.dataset.nv; saveSettings(); partsCache.clear();
+    if (nvEngine(nvVoiceId()) !== wasEngine) { if (playing) pause(); nvSwitchEngine(); }
     renderNvVoices(); renderCast(); nvRenderPrepRow(true);
     if (playing) { speakFrom(idx); return; }
     hardStop();
@@ -4252,7 +4355,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   }
   function nvPlayUrl(url, mode, my, c) {
     const old = nv.url;
-    nv.mode = mode; nv.started = false; nv.url = url; nv.curSpd = c && c.spd || 1;
+    nv.mode = mode; nv.started = false; nv.url = url; nv.curEff = nvClipEff(c);
     try {
       nvAudio.loop = mode === "silence";
       if (nvAudio.getAttribute("src") !== url) nvAudio.src = url;
@@ -4496,7 +4599,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function runVoiceTest(gpuOnly) {
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
-    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 37</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 2–6 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 38</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 2–6 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
     document.body.appendChild(box);
     const now = box.querySelector("#vtNow"), list = box.querySelector("#vtLog"), end = box.querySelector("#vtEnd");
     const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
@@ -4831,7 +4934,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     (async () => {
       try {
         const keys = [...new URLSearchParams(location.search).keys()];
-        log(`Long Drive Reader file check · version 37 · ${new Date().toLocaleString()}`);
+        log(`Long Drive Reader file check · version 38 · ${new Date().toLocaleString()}`);
         log(`page path: ${location.pathname} · address query: ${keys.length ? keys.join(", ") : "none"} · cookies allowed: ${navigator.cookieEnabled} · readable cookies: ${document.cookie ? document.cookie.split(";").length : 0}`);
         log(`isolated=${self.crossOriginIsolated} · SharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"} · cores=${navigator.hardwareConcurrency} · memory≈${navigator.deviceMemory || "?"} GB`);
         log(`browser: ${navigator.userAgent}`);
