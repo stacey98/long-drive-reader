@@ -13,7 +13,7 @@
 //    every voice it has used in "kokoro-voices"; keeping them here too would store them twice.
 //  - Never touched: test files (test/), this file, other websites.
 "use strict";
-const VERSION = "35";
+const VERSION = "36";
 const PAGE = "ldr-page-v" + VERSION;
 const FILES = "ldr-files-1";
 const SHELL = ["./", "manifest.webmanifest", "icon/long-drive-reader-icon.png"];
@@ -106,6 +106,19 @@ async function cacheFirst(req, name, cors) {
   return res;
 }
 
+// v36 (2026-11-14): the page is served "cross-origin isolated" (two headers GitHub Pages can't send itself). That
+// lets the voice helpers use several processor cores at once (SharedArrayBuffer threads in ONNX Runtime): in laptop
+// Chrome one helper went from 0.41x to 0.75x real time with 4 threads. Every outside file the app loads (cdnjs,
+// jsdelivr, Google Fonts) answers with "Cross-Origin-Resource-Policy: cross-origin" (checked 2026-11-14), so they
+// still load.
+function isolated(res) {
+  if (!res || res.type === "opaque" || res.status === 0) return res;
+  const h = new Headers(res.headers);
+  h.set("Cross-Origin-Opener-Policy", "same-origin");
+  h.set("Cross-Origin-Embedder-Policy", "require-corp");
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
+
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
@@ -116,10 +129,10 @@ self.addEventListener("fetch", e => {
   const path = appPath(url);
   if (path !== null) {
     if (SKIP.test(path)) return;
-    if (isPage(path)) { e.respondWith(networkFirst(req, PAGE, scopeUrl())); return; }
+    if (isPage(path)) { e.respondWith(networkFirst(req, PAGE, scopeUrl()).then(isolated)); return; }
     if (req.mode === "navigate") return; // another page in the folder: leave it alone
     if (path === "manifest.webmanifest" || path.startsWith("icon/")) { e.respondWith(networkFirst(req, PAGE, url.origin + url.pathname)); return; }
-    e.respondWith(cacheFirst(req, FILES, false));
+    e.respondWith(cacheFirst(req, FILES, false).then(isolated)); // v36: the helpers' own threads load kokoro/*.mjs; they need the same headers
     return;
   }
   if (req.url.startsWith(FONT_CSS)) { e.respondWith(networkFirst(req, FILES, req.url)); return; }

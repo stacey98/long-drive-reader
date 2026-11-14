@@ -347,7 +347,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       <h3>Use it like an app</h3>
       <p class="note">In Safari, tap the Share button, then Add to Home Screen. It opens straight to your last document, at the sentence where you stopped. For a proper icon instead of a blank one: save the Long Drive Reader icon to Photos, then in the Shortcuts app make a shortcut with the action "Open URLs" and this page's link, choose Add to Home Screen, and pick the icon from Photos.</p>
       <p class="note">On the website copy of this app (not inside claude.ai), the app keeps a copy of itself on the phone after a visit online, so it can open with no signal. Your Library readings are on the phone anyway.</p>
-      <p class="note">Version 35 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
+      <p class="note">Version 36 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
     </div>
   </div>
 </section>
@@ -3477,6 +3477,17 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   const NV_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   const NV_MAX = Math.max(1, Math.min(6, Math.floor((navigator.hardwareConcurrency || 2) / 2)));
   const NV_IOS_MAX = Math.min(2, NV_MAX); // v33: tested on her iPhone (4 cores): 2 helpers ran together without crashing
+  // v36: "cross-origin isolated" (served that way by sw.js on the website copy) lets each helper use several cores.
+  // The voice test (#voicetest, test G) measures which mix of helpers and cores is fastest on this device and keeps it
+  // in "ldr:nvcfg"; without a measurement each helper uses one core, as before.
+  const NV_ISO = self.crossOriginIsolated === true;
+  function nvCfg() {
+    let c = null;
+    try { c = JSON.parse(localStorage.getItem("ldr:nvcfg") || "null"); } catch {}
+    if (!NV_ISO || !c || !(c.threads >= 1 && c.threads <= 8) || !(c.helpers >= 1 && c.helpers <= 6)) return { threads: 1, helpers: 0 };
+    return { threads: c.threads, helpers: c.helpers };
+  }
+  const nvMaxHelpers = () => nvCfg().helpers || (NV_IOS ? NV_IOS_MAX : NV_MAX);
   const NV_SLOW_MSG ="This phone is slower than the voice. Tip: tap Prepare whole reading before you drive.";
   const nvAudio = $("nvAudio");
   const nv = {
@@ -3486,7 +3497,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     // v33 (2026-11-14): that 0% turned out to be the words-to-sounds step hanging (fixed in v32), not memory. Her
     // iPhone's v32 #voicetest: 1 helper 0.48× real time, 2 helpers together 0.81× (no crash). So iPhone starts with
     // 1 helper (fastest first sentence) and adds a 2nd as soon as it falls behind. If one dies, it stays at what worked.
-    maxN: NV_IOS ? NV_IOS_MAX : NV_MAX, startN: NV_IOS ? 1 : NV_MAX,
+    maxN: nvMaxHelpers(), startN: NV_IOS ? 1 : NV_MAX,
     // v27: what the natural voice is doing, for the step-by-step status. loadT0 = first helper started,
     // upT0 = its download finished, bufT0 = playback started waiting, madeAny = a sentence was made on this visit.
     loadT0: 0, upT0: 0, bufT0: 0, madeAny: false, bridge: false, bridgeTimer: null, dling: new Set(), dlKinds: new Set(),
@@ -3689,6 +3700,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     if (!nv.everReady && (!nv.loader || nv.loader.state === "dead")) { nv.loader = h; nv.dl = 0; nv.loadT0 = Date.now(); nv.upT0 = 0; nv.dling = new Set(); nv.dlKinds = new Set(); }
     try {
       h.w = KOKORO.makeWorker({
+        threads: nvCfg().threads, // v36: several cores per helper when the page is cross-origin isolated
         onProgress: n => { arm(); if (h === nv.loader) { nv.dl += n; nvStatus(); } },
         // Which downloads are running (model, ort). When none is, step 1 is over.
         onDl: (k, on) => {
@@ -4206,7 +4218,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const wasPlaying = playing;
     if (wasPlaying) pause();
     settings.natural = on; saveSettings(); partsCache.clear();
-    if (on) { nv.failed = false; nv.why = ""; nv.deaths = 0; nv.slowShown = false; nv.bridge = false; nv.maxN = NV_IOS ? NV_IOS_MAX : NV_MAX; }
+    if (on) { nv.failed = false; nv.why = ""; nv.deaths = 0; nv.slowShown = false; nv.bridge = false; nv.maxN = nvMaxHelpers(); }
     else { nvShutdown(); nvClearMine(); }
     renderVoiceSection(); renderCast(); syncSettingsUI();
     if (wasPlaying) speakFrom(idx);
@@ -4484,7 +4496,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function runVoiceTest(gpuOnly) {
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
-    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 35</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 2–6 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 36</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 2–6 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
     document.body.appendChild(box);
     const now = box.querySelector("#vtNow"), list = box.querySelector("#vtLog"), end = box.querySelector("#vtEnd");
     const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
@@ -4552,6 +4564,27 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         finish(`Finished · graphics chip ${g ? g.toFixed(2) + "×" : "didn't work"}`);
         return;
       }
+      // v36: test G needs the page cross-origin isolated, which the newest offline copy (sw.js) provides. If this page
+      // isn't yet, switch to the newest offline copy and reload once (only once per tab, so it can never loop).
+      if (!NV_ISO && SW_OK) {
+        let tried = false;
+        try { tried = sessionStorage.getItem("ldr:isoTry") === "1"; sessionStorage.setItem("ldr:isoTry", "1"); } catch { tried = true; }
+        if (!tried) {
+          stage = "switching on several cores (the page reloads once)";
+          try {
+            const reg = await navigator.serviceWorker.getRegistration();
+            if (reg) {
+              try { await reg.update(); } catch {}
+              const inst = reg.installing;
+              if (inst) await new Promise(res => { inst.addEventListener("statechange", () => { if (inst.state !== "installing") res(); }); setTimeout(res, 15000); });
+              if (reg.waiting) { reg.waiting.postMessage({ cmd: "skipWaiting" }); await new Promise(res => { navigator.serviceWorker.addEventListener("controllerchange", res, { once: true }); setTimeout(res, 4000); }); }
+            }
+          } catch {}
+          done = true; clearInterval(tick); try { localStorage.removeItem(VT_KEY); } catch {} // a planned reload, not a crash
+          location.reload();
+          return;
+        }
+      }
       try {
         const t0 = performance.now();
         w = KOKORO.makeWorker({
@@ -4594,24 +4627,48 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         const url = URL.createObjectURL(nvWavBlob(nvToPcm([b.audio], 0), b.sr, 0));
         btn.onclick = () => { const au = new Audio(url); au.play().catch(() => {}); };
         box.appendChild(btn);
-        // v34: E (two helpers) is known from her v32 run (0.81×), so it is skipped. F: the graphics chip (WebGPU).
-        // In laptop Chrome it made 7.5 s of speech in 0.66 s (11× real time) against 0.43× on the processor.
-        // It downloads the full-size model (326 MB) from huggingface.co once. It runs in its own helper, last, and is
-        // stopped after 6 minutes, so a hang here can't spoil A–D.
-        w.stop(); w = null; // free the processor helper's memory first
-        let spG = 0;
-        if (crashedF) {
-          add("F. Graphics chip: skipped, because it made the page reload last time. Tap “Try the graphics chip alone” below (a fresh page, nothing else loaded).");
-          const b3 = document.createElement("button");
-          b3.textContent = "Try the graphics chip alone"; b3.className = "pbtn"; b3.style.margin = "8px 0 0 8px";
-          b3.onclick = () => { try { localStorage.removeItem(VT_KEY); } catch {} location.hash = "#gputest"; location.reload(); };
-          box.appendChild(b3);
-        } else spG = await testF();
-        const best = Math.max(sp, spG);
-        add(spG >= 2.2 ? `The graphics chip is fast enough for 2× live (${spG.toFixed(1)}× real time). Listen to its sentence: if it sounds right, the next version uses it.`
-          : best >= r * 1.1 ? `Fast enough to read live at ${r}× speed.`
-          : `Too slow to read live at ${r}× speed. "Prepare whole reading" would take about ${Math.round(30 / Math.max(best, 0.81))} min for 30 min of listening (at 1×, two helpers); start it at home, then listen.`);
-        finish(`Finished · processor ${sp.toFixed(2)}× · graphics chip ${spG ? spG.toFixed(2) + "×" : crashedF ? "skipped (page reloaded last time)" : "didn't work"}`);
+        // v36: F (graphics chip) made her iPhone's page reload twice (v34/v35), even alone, so it is left out here
+        // (it stays at #gputest). G: several processor cores per helper, which needs the page to be cross-origin
+        // isolated (sw.js serves it that way since v36). Each mix of helpers × cores makes the long sentence once per
+        // helper at the same time; the fastest mix is kept in "ldr:nvcfg" and the app uses it from then on.
+        w.stop(); w = null; // free the single-core helper first
+        let bestCfg = { helpers: NV_IOS ? NV_IOS_MAX : NV_MAX, threads: 1, x: 0 };
+        if (!NV_ISO) add("G. Several cores per helper: not available — this page isn't cross-origin isolated" + (SW_OK ? " (reload once and run the test again)" : " (only the website copy can do this)") + ".");
+        else {
+          // iPhone: Safari says 4 cores. Elsewhere: the usual number of helpers with 1, 2 or 4 cores each.
+          const mixes = NV_IOS ? [[2, 1], [1, 2], [2, 2], [1, 4], [3, 1]]
+            : [[NV_MAX, 1], [Math.max(1, Math.floor(NV_MAX / 2)), 2], [Math.max(1, Math.floor(NV_MAX / 4)), 4]];
+          // A mix that made the page reload last time (memory) is skipped, with every mix after it.
+          const cm = lastRun && !lastRun.done ? /^test G: (d+) helpers? × (d+) core/.exec(lastRun.stage || "") : null;
+          const stopAt = cm ? mixes.findIndex(([a, b]) => a === +cm[1] && b === +cm[2]) : -1;
+          if (stopAt >= 0) add(`G. Skipping  ×  and after: it made the page reload last time.`);
+          for (const [nh, nt] of stopAt >= 0 ? mixes.slice(0, stopAt) : mixes) {
+            stage = `test G: ${nh} helper${nh > 1 ? "s" : ""} × ${nt} core${nt > 1 ? "s" : ""} each`; st = performance.now();
+            const ws = [];
+            try {
+              for (let k = 0; k < nh; k++) { const x = KOKORO.makeWorker({ threads: nt, onDead: () => {} }); ws.push(x); await x.ready(); }
+              const tg = performance.now();
+              const outs = await Promise.all(ws.map(x => x.genIds(IDS2, "af_heart")));
+              const spoken = outs.reduce((s, o) => s + o.audio.length / o.sr, 0), xr = spoken / ((performance.now() - tg) / 1000);
+              add(`G. ${nh} helper${nh > 1 ? "s" : ""} × ${nt} core${nt > 1 ? "s" : ""}: ${xr.toFixed(2)}× real time`);
+              if (xr > bestCfg.x) bestCfg = { helpers: nh, threads: nt, x: xr };
+            } catch (eg) { add(`G. ${nh} × ${nt} didn't work: ${nvWhy(eg)}`); }
+            finally { for (const x of ws) x.stop(); }
+          }
+          if (bestCfg.x > 0) {
+            try { localStorage.setItem("ldr:nvcfg", JSON.stringify({ helpers: bestCfg.helpers, threads: bestCfg.threads, x: Math.round(bestCfg.x * 100) / 100, at: Date.now() })); } catch {}
+            add(`Kept for the app: ${bestCfg.helpers} helper${bestCfg.helpers > 1 ? "s" : ""} × ${bestCfg.threads} core${bestCfg.threads > 1 ? "s" : ""} (${bestCfg.x.toFixed(2)}× real time).`);
+          }
+        }
+        const best = Math.max(sp, bestCfg.x || 0);
+        // The fastest listening speed it keeps up with live (5% margin). With "Faster at high speeds" a speed above 1×
+        // needs less work: the speed made goes up by nvEff (laptop measurement, made-time scales about the same).
+        let keep = 0;
+        for (let q = 1; q <= 3.001; q += 0.25) { const gain = nvEff(nvSpdFor(q, settings.nvFast)); if (best * gain >= q * 1.05) keep = q; }
+        add(keep >= r ? `Fast enough to read live at your speed (${r}×)${r > 1.1 && settings.nvFast !== false ? ", with “Faster at high speeds”" : ""}; it keeps up to about ${keep}×.`
+          : keep ? `It keeps up live to about ${keep}×. At your speed (${r}×) it will fall behind now and then: tap “Prepare whole reading” first, or listen at ${keep}×.`
+          : `Too slow to read live even at 1×. Tap “Prepare whole reading” before you listen.`);
+        finish(`Finished · 1 core ${sp.toFixed(2)}× · best mix ${bestCfg.x ? bestCfg.x.toFixed(2) + "×" : "not measured"}`);
       } catch (e) {
         add(`Stopped while ${stage} (after ${sec(st)} s): ${nvWhy(e)}`);
         finish(`Stopped while ${stage}.`);
@@ -4690,7 +4747,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     (async () => {
       try {
         const keys = [...new URLSearchParams(location.search).keys()];
-        log(`Long Drive Reader file check · version 35 · ${new Date().toLocaleString()}`);
+        log(`Long Drive Reader file check · version 36 · ${new Date().toLocaleString()}`);
         log(`page path: ${location.pathname} · address query: ${keys.length ? keys.join(", ") : "none"} · cookies allowed: ${navigator.cookieEnabled} · readable cookies: ${document.cookie ? document.cookie.split(";").length : 0}`);
         log(`isolated=${self.crossOriginIsolated} · SharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"} · cores=${navigator.hardwareConcurrency} · memory≈${navigator.deviceMemory || "?"} GB`);
         log(`browser: ${navigator.userAgent}`);
