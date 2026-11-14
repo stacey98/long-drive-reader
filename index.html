@@ -347,7 +347,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       <h3>Use it like an app</h3>
       <p class="note">In Safari, tap the Share button, then Add to Home Screen. It opens straight to your last document, at the sentence where you stopped. For a proper icon instead of a blank one: save the Long Drive Reader icon to Photos, then in the Shortcuts app make a shortcut with the action "Open URLs" and this page's link, choose Add to Home Screen, and pick the icon from Photos.</p>
       <p class="note">On the website copy of this app (not inside claude.ai), the app keeps a copy of itself on the phone after a visit online, so it can open with no signal. Your Library readings are on the phone anyway.</p>
-      <p class="note">Version 38 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
+      <p class="note">Version 39 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
     </div>
   </div>
 </section>
@@ -3193,6 +3193,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       eq("natural: pause after a sentence at 1.2× (460 ms / 1.2 heard)", nvSilenceSamples(gapAfter("It ended.", true, false), 24000, 1.2), 11040);
       eq("natural: pause before a new page at 1.2× (1000 ms / 1.2 heard)", nvSilenceSamples(gapAfter("It ended.", true, true), 24000, 1.2), 24000);
       settings.nvVoice = "af_heart"; settings.nvCast = {}; settings.sayNames = null;
+      settings.nvVoice = "af_heart"; // (v39: the checks below assume the default narrator; the real choice is restored at the end)
       const cd = { key: "unit-cast", pages: 1, cast: ["A", "B", "C"], sentences: [] }, cm = nvCastMap(cd);
       eq("natural cast: each gets their own voice, never the narrator's", ["A", "B", "C"].map(n => cm[n].voice + (cm[n].own ? "" : "!")).join(","), "af_bella,af_nicole,am_michael");
       // v30: 15 American voices for characters (16 minus the narrator's), so 10 characters all get their own; 16 share once.
@@ -3205,7 +3206,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       settings.nvVoice = "st_F1";
       eq("fast voices: chosen, named, and characters get other fast voices", nvVoiceId() + "|" + nvVoiceName("st_F1") + "|" + Object.values(nvCastMap({ key: "unit-st", cast: ["A", "B"] })).map(c => c.voice).join(","), "st_F1|Fast woman 1|st_F2,st_M1");
       eq("fast voices: a clip made at 1.5 plays at 2/1.5 to be heard at 2×", Math.round(2 / nvClipEff({ eff: 1.5 }) * 1000) / 1000, 1.333);
-      settings.nvVoice = keep.nvVoice;
+      settings.nvVoice = "af_heart";
       settings.nvCast = { "unit-cast": { B: "am_puck" } };
       eq("natural cast: a voice picked by tapping is kept", nvCastMap(cd).B.voice, "am_puck");
       settings.nvCast = {};
@@ -3544,6 +3545,8 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   // for a second), two elsewhere. (settings.nvVoice is read directly: this runs before nvVoiceId exists.)
   const nvMaxHelpers = () => /^st_/.test(settings.nvVoice || "") ? (NV_IOS ? 1 : Math.min(2, NV_MAX)) : nvCfg().helpers || (NV_IOS ? NV_IOS_MAX : NV_MAX);
   const NV_SLOW_MSG ="This phone is slower than the voice. Tip: tap Prepare whole reading before you drive.";
+  // v39: with one of the usual voices, point to the fast ones first (they keep up at 2× on her iPhone).
+  const NV_SLOW_MSG_FAST = "This phone is slower than the voice. Tip: pick a Fast voice in Settings (keeps up at 2×), or tap Prepare whole reading before you drive.";
   const nvAudio = $("nvAudio");
   const nv = {
     failed: false, why: "", everReady: false, deaths: 0, hid: 0, loader: null, dl: 0,
@@ -4044,7 +4047,8 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   }
   function nvSizeText(jobs) {
     const secs = jobs.reduce((s, j) => s + j.est, 0);
-    return `About ${Math.max(1, Math.round(secs * 48000 / 1e6))} MB on this phone (about ${Math.max(1, Math.round(secs / 60))} min of audio).`;
+    // (16-bit audio: the usual voices at 24,000 samples a second, the fast ones at 44,100 — v39)
+    return `About ${Math.max(1, Math.round(secs * (isST(nvVoiceId()) ? 88200 : 48000) / 1e6))} MB on this phone (about ${Math.max(1, Math.round(secs / 60))} min of audio).`;
   }
   // The Library row under each reading (only with the natural voice on).
   function nvLibRow(e) {
@@ -4160,7 +4164,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const sp = nvSpeed();
     if (!active || !(sp > 0) || sp >= settings.rate * 0.9 || ahead >= NV_TARGET) { nv.slowSince = 0; return; }
     if (!nv.slowSince) { nv.slowSince = Date.now(); return; }
-    if (Date.now() - nv.slowSince >= 30000) { nv.slowShown = true; nv.tipUntil = Date.now() + 15000; setStatus(NV_SLOW_MSG, false, null, 15000); }
+    if (Date.now() - nv.slowSince >= 30000) { nv.slowShown = true; nv.tipUntil = Date.now() + 15000; setStatus(isST(nvVoiceId()) ? NV_SLOW_MSG : NV_SLOW_MSG_FAST, false, null, 15000); }
   }
 
   // --- Status line and the settings text ---
@@ -4599,7 +4603,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function runVoiceTest(gpuOnly) {
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
-    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 38</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 2–6 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 39</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 2–6 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
     document.body.appendChild(box);
     const now = box.querySelector("#vtNow"), list = box.querySelector("#vtLog"), end = box.querySelector("#vtEnd");
     const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
@@ -4934,7 +4938,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     (async () => {
       try {
         const keys = [...new URLSearchParams(location.search).keys()];
-        log(`Long Drive Reader file check · version 38 · ${new Date().toLocaleString()}`);
+        log(`Long Drive Reader file check · version 39 · ${new Date().toLocaleString()}`);
         log(`page path: ${location.pathname} · address query: ${keys.length ? keys.join(", ") : "none"} · cookies allowed: ${navigator.cookieEnabled} · readable cookies: ${document.cookie ? document.cookie.split(";").length : 0}`);
         log(`isolated=${self.crossOriginIsolated} · SharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"} · cores=${navigator.hardwareConcurrency} · memory≈${navigator.deviceMemory || "?"} GB`);
         log(`browser: ${navigator.userAgent}`);
