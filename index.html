@@ -321,7 +321,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       <h3>Use it like an app</h3>
       <p class="note">In Safari, tap the Share button, then Add to Home Screen. It opens straight to your last document, at the sentence where you stopped. For a proper icon instead of a blank one: save the Long Drive Reader icon to Photos, then in the Shortcuts app make a shortcut with the action "Open URLs" and this page's link, choose Add to Home Screen, and pick the icon from Photos.</p>
       <p class="note">On the website copy of this app (not inside claude.ai), the app keeps a copy of itself on the phone after a visit online, so it can open with no signal. Your Library readings are on the phone anyway.</p>
-      <p class="note">Version 30 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
+      <p class="note">Version 31 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
     </div>
   </div>
 </section>
@@ -3333,6 +3333,12 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
           if (cmd === "gen") {
             const a = await t.generate(text, { voice: voice || "af_heart", speed: speed || 1 });
             self.postMessage({ id, audio: a.audio, sr: a.sampling_rate }, [a.audio.buffer]);
+          } else if (cmd === "ids") {
+            // v31 test only: the model with ready-made sound codes, skipping the phonemizer (espeak-ng in WebAssembly)
+            const T = t.tokenizer("a").input_ids.constructor;
+            const ids = new T("int64", BigInt64Array.from(e.data.ids.map(BigInt)), [1, e.data.ids.length]);
+            const a = await t.generate_from_ids(ids, { voice: voice || "af_heart", speed: 1 });
+            self.postMessage({ id, audio: a.audio, sr: a.sampling_rate }, [a.audio.buffer]);
           } else self.postMessage({ id, ok: true });
         } catch (err) {
           // Safari's err.stack is only "@file:line:col" (no message), so the message always goes first.
@@ -3357,7 +3363,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         if (opts.onDead) opts.onDead(err);
       };
       const call = msg => new Promise((resolve, reject) => { const id = ++n; waiting.set(id, { resolve, reject }); w.postMessage(Object.assign({ id }, msg)); });
-      return { ready: () => call({ cmd: "init" }), gen: (text, voice, speed) => call({ cmd: "gen", text, voice, speed }), stop: () => w.terminate() };
+      return { ready: () => call({ cmd: "init" }), gen: (text, voice, speed) => call({ cmd: "gen", text, voice, speed }), genIds: (ids, voice) => call({ cmd: "ids", ids, voice }), stop: () => w.terminate() };
     }
     return { load, VOICES, base, makeWorker };
   })();
@@ -4350,7 +4356,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function runVoiceTest() {
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
-    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 30</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 31</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
     document.body.appendChild(box);
     const now = box.querySelector("#vtNow"), list = box.querySelector("#vtLog"), end = box.querySelector("#vtEnd");
     const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
@@ -4361,7 +4367,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const tick = setInterval(() => {
       if (done) return;
       const s = (performance.now() - st) / 1000;
-      now.textContent = `Now: ${stage} · ${s.toFixed(0)} s` + (stage === "downloading the voice" ? ` · ${mb(got)} of ${mb(tot)} MB` : "") + (s > 180 ? " · stuck? (over 3 minutes)" : "");
+      now.textContent = `Now: ${stage} · ${s.toFixed(0)} s` + (stage === "downloading the voice" ? ` · ${mb(got)} of ${mb(tot)} MB` : "") + (s > 180 ? " · stuck? (over 3 minutes) — take a screenshot now and send it to Claude" : "");
     }, 500);
     const finish = msg => { done = true; clearInterval(tick); now.textContent = msg; end.textContent = "Done. Take a screenshot and send it to Claude."; };
     add(`Phone: ${navigator.hardwareConcurrency || "?"} cores · ${NV_IOS ? "iPhone/iPad" : "not iPhone"} · ${(navigator.userAgent.match(/OS [\d_]+|Version\/[\d.]+|Chrome\/\d+/g) || []).join(" · ")}`);
@@ -4383,15 +4389,27 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         await w.ready();
         add(stage === "starting the voice" ? `Start-up: ${sec(st)} s` : `Ready after ${stage} (${mb(got)} MB downloaded)`);
         add(`Ready to speak ${sec(t0)} s after the test began`);
-        stage = "making a short sentence"; st = performance.now();
+        // v31: first the model alone, with sound codes made on a laptop for these two sentences (no phonemizer).
+        // Then the full path (phonemizer + model). If the full path sticks but the model alone works, the phonemizer
+        // (espeak-ng in WebAssembly) is what hangs on this phone. Codes from kokoro-js 1.2.1 on 2026-11-14.
+        const IDS1 = [0,50,83,54,156,57,135,3,16,81,102,61,16,102,68,16,70,16,53,65,156,102,53,16,62,156,86,61,62,4,0];
+        const IDS2 = [0,65,157,86,56,16,81,83,16,62,156,63,158,16,53,156,138,55,58,83,56,51,68,16,48,156,87,158,61,62,16,55,156,86,62,3,16,56,156,51,158,81,85,16,61,156,43,102,46,16,65,156,76,56,62,177,46,16,62,83,16,56,156,47,102,55,16,70,16,58,123,156,43,102,61,3,16,61,157,57,135,16,81,47,102,16,61,58,156,86,56,62,16,55,156,57,135,61,62,16,83,64,16,81,83,16,55,156,76,158,123,56,102,112,16,62,156,76,158,53,102,112,16,70,44,157,43,135,62,16,81,83,16,55,156,69,158,123,53,102,62,4,0];
+        stage = "test A: the model alone, short sentence"; st = performance.now();
+        const m1 = await w.genIds(IDS1, "af_heart");
+        add(`A. Model alone, short sentence: ${(m1.audio.length / m1.sr).toFixed(1)} s of speech made in ${sec(st)} s`);
+        stage = "test B: the model alone, long sentence"; st = performance.now();
+        const tb = performance.now(), m2 = await w.genIds(IDS2, "af_heart");
+        const spM = (m2.audio.length / m2.sr) / ((performance.now() - tb) / 1000);
+        add(`B. Model alone, long sentence: ${(m2.audio.length / m2.sr).toFixed(1)} s of speech made in ${sec(tb)} s → ${spM.toFixed(2)}× real time`);
+        stage = "test C: words to sounds + model (what the app does) — if this sticks, the words-to-sounds step is the problem"; st = performance.now();
         const a = await w.gen("Hello, this is a quick test.", "af_heart", 1);
         const d1 = a.audio.length / a.sr;
-        add(`Short sentence: ${d1.toFixed(1)} s of speech made in ${sec(st)} s`);
-        stage = "making a long sentence"; st = performance.now();
+        add(`C. Words to sounds + model, short sentence: ${d1.toFixed(1)} s of speech made in ${sec(st)} s`);
+        stage = "test D: words to sounds + model, long sentence"; st = performance.now();
         const t2 = performance.now();
         const b = await w.gen("When the two companies first met, neither side wanted to name a price, so they spent most of the morning talking about the market, the timeline, and the people who would run the business afterwards.", "af_heart", 1);
         const took = (performance.now() - t2) / 1000, d2 = b.audio.length / b.sr, sp = d2 / took, r = settings.rate;
-        add(`Long sentence: ${d2.toFixed(1)} s of speech made in ${took.toFixed(1)} s → ${sp.toFixed(2)}× real time`);
+        add(`D. Words to sounds + model, long sentence: ${d2.toFixed(1)} s of speech made in ${took.toFixed(1)} s → ${sp.toFixed(2)}× real time`);
         let verdict;
         if (sp >= r * 1.1) verdict = `With one helper: fast enough to read live at ${r}× speed.`;
         else verdict = `With one helper (what the app uses on iPhone): too slow to read live at ${r}× speed (it would need ${r}× or more). Prepare whole reading would take about ${Math.round(30 / sp)} min for 30 min of listening (at 1×).`;
@@ -4479,7 +4497,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     (async () => {
       try {
         const keys = [...new URLSearchParams(location.search).keys()];
-        log(`Long Drive Reader file check · version 30 · ${new Date().toLocaleString()}`);
+        log(`Long Drive Reader file check · version 31 · ${new Date().toLocaleString()}`);
         log(`page path: ${location.pathname} · address query: ${keys.length ? keys.join(", ") : "none"} · cookies allowed: ${navigator.cookieEnabled} · readable cookies: ${document.cookie ? document.cookie.split(";").length : 0}`);
         log(`isolated=${self.crossOriginIsolated} · SharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"} · cores=${navigator.hardwareConcurrency} · memory≈${navigator.deviceMemory || "?"} GB`);
         log(`browser: ${navigator.userAgent}`);
