@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-title" content="Long Drive">
 <link rel="apple-touch-icon" href="icon/long-drive-reader-icon.png">
 <link rel="icon" href="icon/long-drive-reader-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
 <title>Long Drive Reader</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -180,6 +181,17 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
 .note.err { color: var(--danger); }
 .group > .nvrow { border-top: 0; padding-top: 0; min-height: 0; }
 .nvrow .pbtn { padding: 5px 12px; font-size: 13px; }
+/* v28: voice groups with a Listen button, text fields (pronunciations, bookmark notes), the clean-text box */
+.vlabel { margin: 8px 0 6px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.vlabel:first-child { margin-top: 0; }
+.vrow { padding: 0 14px 0 0; }
+.pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; text-align: left; padding: 12px 0 12px 14px; align-self: stretch; }
+.pick[aria-checked="true"] .tick svg { visibility: visible; }
+.tin { flex: 1; min-width: 0; width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); font: 16px/1.3 var(--ui); padding: 8px 10px; }
+.prow { gap: 8px; }
+.mnote { display: block; color: var(--ink); font-size: 14px; margin-top: 3px; white-space: normal; overflow-wrap: anywhere; }
+textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--ui); padding: 12px; }
+#pageInfo { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 </style>
 
@@ -187,14 +199,14 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   <header class="top gutter">
     <div class="doc">
       <strong id="fname">Welcome</strong>
-      <span id="fmeta">Sample text · open a PDF to start</span>
+      <span id="fmeta">Sample text · open a file to start</span>
     </div>
     <button class="libbtn" id="libBtn" aria-label="Library, contents and bookmarks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h3v16H5zM10 4h3v16h-3z"/><path d="M15.2 5.1l2.9-.8 3.6 15-2.9.8z"/></svg></button>
     <label class="open" for="file" id="openBtn">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/></svg>
-      Open PDF
+      Open file
     </label>
-    <input type="file" id="file" accept="application/pdf,.pdf">
+    <input type="file" id="file" accept="application/pdf,.pdf,.epub,application/epub+zip,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.txt,text/plain,.md,.markdown,text/markdown,.html,.htm,text/html">
     <input type="file" id="scanFile" accept="image/*" multiple capture="environment">
     <input type="file" id="photoFile" accept="image/*" multiple>
   </header>
@@ -231,7 +243,8 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
 
     <div class="sec">
       <h3>Speed</h3>
-      <div class="group"><div class="slider"><input type="range" id="rate" min="0.8" max="2" step="0.05" value="1" aria-label="Speed"><output id="rateOut">1.00×</output></div></div>
+      <div class="group"><div class="slider"><input type="range" id="rate" min="0.5" max="3" step="0.05" value="1" aria-label="Speed"><output id="rateOut">1.00×</output></div></div>
+      <p class="note" id="rateNote"></p>
     </div>
 
     <div class="sec">
@@ -240,7 +253,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
       <p class="note" id="engineNote"></p>
       <div id="nvBox" class="sec" hidden>
         <p class="note" id="nvState"></p>
-        <div class="group" id="nvList" role="radiogroup" aria-label="Natural voice"></div>
+        <div id="nvList" role="radiogroup" aria-label="Natural voice"></div>
         <label class="row" for="nvBridge" style="padding-inline:0"><span class="grow">Don't wait for it<small>Reads with the phone voice while the natural voice gets ready, then switches by itself between two sentences.</small></span><span class="switch"><input type="checkbox" id="nvBridge"><span></span></span></label>
         <div class="group" id="nvPrepGroup"><div class="row"><span class="grow">Prepare whole reading<small id="nvPrepSub"></small></span><button class="pbtn" id="nvPrepBtn">Prepare</button></div></div>
       </div>
@@ -276,6 +289,13 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     </div>
 
     <div class="sec">
+      <h3>Pronunciations</h3>
+      <div class="group" id="pronList" hidden></div>
+      <div class="group"><div class="row prow"><input class="tin" id="pronFrom" placeholder="Word" aria-label="Word as written" maxlength="60" autocomplete="off" autocapitalize="off" spellcheck="false"><span aria-hidden="true">→</span><input class="tin" id="pronTo" placeholder="Say as" aria-label="Say it as" maxlength="80" autocomplete="off" spellcheck="false"><button class="pbtn" id="pronAdd">Add</button></div></div>
+      <p class="note">For names the voice says wrong, e.g. Kaiser → Ky-zer. Whole words only, any capitals. Both voices use it; the screen still shows the original.</p>
+    </div>
+
+    <div class="sec">
       <h3>Car skip buttons</h3>
       <div class="seg four" id="carSeg"><button data-v="10s">10 sec</button><button data-v="sentence">Sentence</button><button data-v="page">Page</button><button data-v="section">Section</button></div>
       <p class="note">What the car’s and the lock screen’s next and previous buttons jump by. The 10-second buttons on this screen stay as they are.</p>
@@ -300,7 +320,8 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     <div class="sec">
       <h3>Use it like an app</h3>
       <p class="note">In Safari, tap the Share button, then Add to Home Screen. It opens straight to your last document, at the sentence where you stopped. For a proper icon instead of a blank one: save the Long Drive Reader icon to Photos, then in the Shortcuts app make a shortcut with the action "Open URLs" and this page's link, choose Add to Home Screen, and pick the icon from Photos.</p>
-      <p class="note">Version 27 · 13 Nov 2026. If this says an older number, tap Safari's reload button.</p>
+      <p class="note">On the website copy of this app (not inside claude.ai), the app keeps a copy of itself on the phone after a visit online, so it can open with no signal. Your Library readings are on the phone anyway.</p>
+      <p class="note">Version 28 · 13 Nov 2026. If this says an older number, tap Safari's reload button.</p>
     </div>
   </div>
 </section>
@@ -313,7 +334,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
 
     <div id="tabReadings" class="sec">
       <div class="group">
-        <label class="row" for="file"><span class="grow">Open a PDF</span></label>
+        <label class="row" for="file"><span class="grow">Open a file<small>A PDF, an ePub book, a Word file (.docx), a text or Markdown file, or a saved web page (.html).</small></span></label>
         <label class="row" for="scanFile" id="scanRow"><span class="grow">Scan pages<small>Take photos of paper pages; the text is read off them.</small></span></label>
         <label class="row" for="photoFile"><span class="grow">Read photos of pages<small>Pick one or more photos you already took.</small></span></label>
         <button class="row" id="pasteBtn" aria-expanded="false" aria-controls="pasteBox"><span class="grow">Paste text<small>An article, an email or notes.</small></span></button>
@@ -321,6 +342,18 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
       <div id="pasteBox" class="sec" hidden>
         <textarea id="pasteText" placeholder="Paste the text here" aria-label="Text to read"></textarea>
         <div class="pair"><button class="pbtn" id="pasteCancel">Cancel</button><button class="primary" id="pasteGo">Read it</button></div>
+      </div>
+      <div id="thisBox" class="sec">
+        <h3>This reading</h3>
+        <div class="group">
+          <button class="row" id="copyBtn"><span class="grow">Copy clean text<small>What the voice reads, without page clutter or skipped tables, to paste into another app.</small></span></button>
+          <button class="row" id="saveTxtBtn"><span class="grow">Save as a .txt file<small>The same clean text, as a file.</small></span></button>
+        </div>
+        <div id="txtBox" class="sec" hidden>
+          <p class="note" id="txtNote"></p>
+          <textarea id="txtOut" aria-label="Clean text of this reading"></textarea>
+          <div class="pair"><button class="pbtn" id="txtClose">Close</button><button class="primary" id="txtCopy">Copy</button></div>
+        </div>
       </div>
       <h3>Recent readings</h3>
       <div class="group" id="libList"></div>
@@ -333,7 +366,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
 
     <div id="tabMarks" class="sec" hidden>
       <div class="group" id="markList"></div>
-      <p class="note">Tap the bookmark under the progress bar to mark a spot while you listen.</p>
+      <p class="note">Tap the bookmark under the progress bar to mark a spot while you listen. Tap Note to add a few words to a bookmark.</p>
     </div>
   </div>
 </section>
@@ -357,9 +390,11 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     { rate: 1, voiceURI: "", pauses: "natural", delivery: "flow", expressive: true, skipClutter: true, skipNotes: true, follow: true, allLangs: false,
       sayNames: null, castVoices: {}, // sayNames null = automatic (on unless every character has a voice of their own)
       carSkip: "10s", autoNext: true, bizSpeak: true,
-      natural: false, nvVoice: "af_heart", nvCast: {}, nvBridge: true }, // natural = Natural AI voice (beta), off by default (VOICE QUALITY RULE 3)
+      natural: false, nvVoice: "af_heart", nvCast: {}, nvBridge: true, // natural = Natural AI voice (beta), off by default (VOICE QUALITY RULE 3)
+      pron: [] }, // v28: pronunciation list [{ from, to }] (Settings → Pronunciations)
     store.get("ldr:v3", {})
   );
+  if (!Array.isArray(settings.pron)) settings.pron = [];
   const saveSettings = () => store.set("ldr:v3", settings);
   // v27 (the owner, 2026-11-13): the default speed is 1× (it was 1.2×). A speed still at the old default moves to 1× once;
   // any other speed she picked is kept.
@@ -505,6 +540,8 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   //   y = top of line (0..h); lead = 1 if a raised footnote number was removed from the start of the line.
   //   partial = later pages are still being read (total = page count of the whole PDF).
   //   kind = "pdf" (default), "scan" (photos of pages) or "text" (pasted); plain = pasted text, no page margins.
+  //   v28: also "epub", "docx", "txt", "md", "html" (opened files): one plain page; a 7th line field 1 = a heading
+  //   from the file's own structure (chapter titles, h1–h6, "#" lines), which becomes a Contents entry.
   // doc = { name, key, pages, ocr, cast, stats, sentences: [{ t, page, first, para?, head?, who?, lab?, skip?, run? }] }
   //   who = speaking character in a play; lab = length of the "ANTIGONE: " label at the start of t.
   //   skip = "Exhibit 3" / "Table" / "References": a table, exhibit or reference list that is shown but not read;
@@ -512,7 +549,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   // =====================================================================
   const SAMPLE_TEXT = [
     "Welcome to Long Drive Reader.",
-    "Tap Open PDF at the top and pick any reading, however long it is.",
+    "Tap Open file at the top and pick any reading, however long it is: a PDF, an ePub book, a Word file or a web page.",
     "The Library button next to it keeps your recent readings, and can scan paper pages or read pasted text.",
     "Scanned pages work too: the app recognizes the text first, which takes a few seconds per page.",
     "Page numbers, headers, footers and footnotes are skipped, so you only hear the reading itself.",
@@ -698,7 +735,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
           if (cite.has(li)) { stats.cite++; return; }
         }
         if (size < body * 0.95 && y >= notesTop) { stats.notes++; return; }
-        keep.push({ t, y, size, lab: null });
+        keep.push({ t, y, size, lab: null, hd: !!ln[6] });
       });
       return keep;
     });
@@ -709,14 +746,14 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     // 2. Plays: a name that starts at least 3 lines, with at least 2 such names, is a character.
     const counts = new Map();
     for (const keep of pageKeeps) for (const L of keep) {
-      if (L.skip) continue;
+      if (L.skip || L.hd) continue; // (a chapter title is never a speaker label)
       const lb = labelOf(L.t);
       if (lb) { L.lab = lb; counts.set(lb.name, (counts.get(lb.name) || 0) + 1); }
     }
     let cast = [...counts].filter(e => e[1] >= 3).map(e => e[0]);
     if (cast.length < 2) cast = [];
     for (const keep of pageKeeps) for (const L of keep) {
-      if (L.skip) { L.lab = null; continue; }
+      if (L.skip || L.hd) { L.lab = null; continue; }
       if (L.lab && !cast.includes(L.lab.name)) L.lab = null;
       if (!L.lab && cast.length) L.lab = fuzzyLabel(L.t, cast);
     }
@@ -733,7 +770,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
       keep.forEach((L, li) => {
         const next = li + 1 < keep.length ? keep[li + 1] : (pageKeeps[pi + 1] || [])[0];
         const prevEnded = !cur || !cur.t || prevHead || END_RE.test(cur.t);
-        const head = !L.lab && !L.skip && prevEnded && isHeading(L, body, next);
+        const head = !L.lab && !L.skip && (L.hd || (prevEnded && isHeading(L, body, next)));
         // A paragraph starts after a bigger vertical gap than usual (a jump up to the next column doesn't count).
         const para = prevY !== null && L.y - prevY > Math.max(L.size, prevSize) * (ocr ? 2 : 1.75);
         if (!cur || L.lab || head || prevHead || (L.run || 0) !== cur.run) startBlock(L.lab ? L.lab.name : null, head, L.lab ? L.lab.len : 0, L);
@@ -772,7 +809,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     }
     // While later pages are still being read, hold back a last sentence that isn't finished yet.
     if (r.partial && sentences.length && !END_RE.test(sentences[sentences.length - 1].t)) sentences.pop();
-    return { name: r.name, key: r.key, pages: Math.max(nPages, r.total || 0), ocr: r.pages.some(p => p.ocr), cast, stats, sentences };
+    return { name: r.name, key: r.key, kind: r.kind || "pdf", pages: Math.max(nPages, r.total || 0), ocr: r.pages.some(p => p.ocr), cast, stats, sentences };
   }
 
   // ---------------------------------------------------------------------
@@ -908,8 +945,9 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     S.forEach((s, i) => {
       const p = S[i - 1];
       if (d.pages > 1 && (!p || p.page !== s.page)) out.push({ i, kind: "page", label: `Page ${s.page}`, sub: s.t.slice(0, 70) });
-      if (s.skip) { if (!p || p.run !== s.run) out.push({ i, kind: "skip", label: `${s.skip} · skipped`, sub: `Page ${s.page}` }); }
-      else if (s.head) out.push({ i, kind: "head", label: s.t.length > 80 ? s.t.slice(0, 77) + "…" : s.t, sub: `Page ${s.page}` });
+      const sub = d.pages > 1 ? `Page ${s.page}` : ""; // (a book or document opened as one page: no page numbers)
+      if (s.skip) { if (!p || p.run !== s.run) out.push({ i, kind: "skip", label: `${s.skip} · skipped`, sub }); }
+      else if (s.head) out.push({ i, kind: "head", label: s.t.length > 80 ? s.t.slice(0, 77) + "…" : s.t, sub });
     });
     return out;
   }
@@ -1135,6 +1173,8 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
         // the two pages of a book spread come out one after the other instead of line by line across.
         try { await worker.setParameters({ tessedit_pageseg_mode: "3" }); ocrInfo.psm = "3 (auto)"; }
         catch (e) { console.warn(e); ocrInfo.psm = "default (setParameters failed)"; }
+        // v28: keep the text-recognition files for offline use (website copy only; see swWarm).
+        swWarm([dataUrl, TESS + "worker.min.js", "https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core-simd-lstm.wasm.js", "https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core-lstm.wasm.js"]);
         return worker;
       })();
       ocrWorkerP.catch(() => { ocrWorkerP = null; });
@@ -1418,7 +1458,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     ended = !!(e && e.done) && idx >= doc.sentences.length - 1;
     renderText();
     if (!r.partial) setStatus(ended ? "You finished this reading. Press play to hear it again from the start."
-      : idx > 0 ? `Picked up where you left off, on page ${doc.sentences[idx].page}.` : "");
+      : idx > 0 ? (isFlat(doc) ? "Picked up where you left off." : `Picked up where you left off, on page ${doc.sentences[idx].page}.`) : "");
     requestAnimationFrame(() => scrollToCurrent(true));
   }
   // More pages arrived: use the longer document without interrupting the voice.
@@ -1553,6 +1593,264 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     return true;
   }
 
+  // =====================================================================
+  // v28: other files — ePub books, Word (.docx), plain text, Markdown and saved web pages (.html).
+  // Each becomes one plain page (like pasted text). Headings from the file's own structure (chapter titles, h1–h6,
+  // "#" lines) are marked, so they become Contents entries and "section" stops for the car buttons and sleep timer.
+  // JSZip (ePub) and mammoth (Word) are loaded from cdnjs only when such a file is opened (pinned versions).
+  // =====================================================================
+  const JSZIP_URL = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+  const MAMMOTH_URL = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js";
+  const libScripts = {};
+  function needLib(name, url) {
+    if (window[name]) return Promise.resolve(window[name]);
+    if (!libScripts[name]) {
+      libScripts[name] = loadScript(url).then(() => { if (!window[name]) throw new Error(name + " didn't load"); return window[name]; });
+      libScripts[name].catch(() => { delete libScripts[name]; });
+    }
+    return libScripts[name];
+  }
+  const userErr = m => Object.assign(new Error(m), { userMsg: m });
+  // What kind of file this is, from its name (or its type when the name has no ending).
+  function fileKind(f) {
+    const n = String(f && f.name || "").toLowerCase().trim(), t = String(f && f.type || "").toLowerCase();
+    if (/\.pdf$/.test(n) || t === "application/pdf") return "pdf";
+    if (/\.epub$/.test(n) || t === "application/epub+zip") return "epub";
+    if (/\.docx$/.test(n) || t === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") return "docx";
+    if (/\.(md|markdown|mdown|mkd)$/.test(n) || t === "text/markdown" || t === "text/x-markdown") return "md";
+    if (/\.(html?|xhtml)$/.test(n) || t === "text/html" || t === "application/xhtml+xml") return "html";
+    if (/\.(txt|text)$/.test(n) || t === "text/plain") return "txt";
+    if (/\.doc$/.test(n) || t === "application/msword") return "doc";
+    return "";
+  }
+  // Blocks [{ t, head?: 1-6, br?: true }] -> one plain page. br = the next line of the same paragraph; anything else
+  // starts a new paragraph. A heading is drawn bigger and flagged (7th field), so buildDoc makes it a heading.
+  function rawFromBlocks(name, key, kind, blocks) {
+    const lines = [];
+    let y = 20;
+    for (const b of blocks || []) {
+      const t = String(b && b.t || "").replace(/\s+/g, " ").trim();
+      if (!t || !/[\p{L}\p{N}]/u.test(t)) continue;
+      const head = !!b.head && t.length <= 200;
+      if (lines.length) y += b.br && !head ? 14 : 28;
+      const ln = [t, y, head ? 16 : 12, 0, 0, 0];
+      if (head) ln.push(1);
+      lines.push(ln);
+    }
+    const nm = String(name || "Document").replace(/\s+/g, " ").trim();
+    return { name: nm.length > 120 ? nm.slice(0, 117).replace(/\s+\S*$/, "") + "…" : nm || "Document", key, kind, pages: [{ h: y + 40, ocr: false, plain: true, lines }] };
+  }
+  // HTML (a web page, an ePub chapter, a Word file converted by mammoth) -> blocks. Scripts, styles, menus, side
+  // boxes, pictures, footnote numbers and footnote texts are left out.
+  const BLOCK_TAGS = new Set("P DIV LI UL OL DL DT DD BLOCKQUOTE PRE SECTION ARTICLE MAIN HEADER FOOTER TABLE THEAD TBODY TFOOT TR TD TH CAPTION FIGURE FIGCAPTION ADDRESS HR CENTER BODY HTML".split(" "));
+  const DROP_TAGS = new Set("SCRIPT STYLE NOSCRIPT TEMPLATE SVG CANVAS IFRAME OBJECT EMBED HEAD NAV ASIDE BUTTON SELECT TEXTAREA INPUT AUDIO VIDEO MATH IMG PICTURE".split(" "));
+  function htmlBlocks(root) {
+    const out = [];
+    let buf = "", br = false, headLv = 0;
+    const flush = () => {
+      const t = buf.replace(/\s+/g, " ").trim();
+      if (t) { const b = { t }; if (headLv) b.head = headLv; else if (br) b.br = true; out.push(b); }
+      buf = ""; br = false;
+    };
+    const walk = n => {
+      if (n.nodeType === 3 || n.nodeType === 4) { buf += n.nodeValue; return; } // text, CDATA
+      if (n.nodeType !== 1) return;
+      const tag = String(n.localName || n.nodeName || "").toUpperCase();
+      if (DROP_TAGS.has(tag)) return;
+      const attr = k => (n.getAttribute && n.getAttribute(k)) || "";
+      if (n.hasAttribute && n.hasAttribute("hidden")) return;
+      if (/\b(footnote|endnote|rearnote|noteref)\b/.test(attr("epub:type"))) return;      // ePub notes and note links
+      if (/^(foot|end)note-\d+$/.test(attr("id"))) return;                                 // Word notes (as mammoth names them)
+      if (tag === "SUP" && /^[\s\d*†‡§,\[\]–-]*$/.test(n.textContent || "")) return;      // a footnote number
+      if (tag === "BR") { flush(); br = true; return; }
+      const h = /^H([1-6])$/.exec(tag);
+      if (h) { flush(); const keep = headLv; headLv = Number(h[1]); for (const c of n.childNodes) walk(c); flush(); headLv = keep; return; }
+      const block = BLOCK_TAGS.has(tag);
+      if (block) flush();
+      for (const c of n.childNodes) walk(c);
+      if (block) flush();
+    };
+    if (root) walk(root);
+    flush();
+    return out;
+  }
+  function parseMarkup(s, xml) {
+    let d = null;
+    if (xml) { try { d = new DOMParser().parseFromString(s, "application/xhtml+xml"); if (d.getElementsByTagName("parsererror").length) d = null; } catch { d = null; } }
+    return d || new DOMParser().parseFromString(s, "text/html");
+  }
+  // Markdown -> blocks: "#" and underlined headings, paragraphs, list items on their own; links read as their text;
+  // pictures, code blocks, rules and a front-matter block at the top are left out.
+  function mdBlocks(src) {
+    const out = [];
+    let para = [], fence = false, front = false;
+    const inline = t => t.replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/\[([^\]]+)\]\[[^\]]*\]/g, "$1")
+      .replace(/<[^>]+>/g, "")
+      .replace(/(\*\*|__)(\S(?:.*?\S)?)\1/g, "$2").replace(/\*(\S(?:.*?\S)?)\*/g, "$1")
+      .replace(/(^|[^\p{L}\p{N}_])_(\S(?:.*?\S)?)_(?![\p{L}\p{N}_])/gu, "$1$2")
+      .replace(/~~(.+?)~~/g, "$1").replace(/`([^`]*)`/g, "$1")
+      .replace(/\\([\\`*_{}\[\]()#+\-.!])/g, "$1");
+    const flushP = () => { para.forEach((t, k) => out.push(k ? { t, br: true } : { t })); para = []; };
+    const lines = String(src || "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split("\n");
+    lines.forEach((line, li) => {
+      const t = line.trim();
+      if (li === 0 && t === "---") { front = true; return; }
+      if (front) { if (t === "---" || t === "...") front = false; return; }
+      if (/^(```|~~~)/.test(t)) { flushP(); fence = !fence; return; }
+      if (fence) return;
+      if (!t) { flushP(); return; }
+      let m;
+      if ((m = /^(#{1,6})\s+(.*?)\s*#*$/.exec(t))) { flushP(); out.push({ t: inline(m[2]), head: m[1].length }); return; }
+      if ((/^=+$/.test(t) || /^-+$/.test(t)) && para.length === 1) { out.push({ t: para[0], head: t[0] === "=" ? 1 : 2 }); para = []; return; }
+      if (/^([-*_])(\s*\1){2,}$/.test(t)) { flushP(); return; }                    // a horizontal rule
+      if (/^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/.test(t)) return;           // a table's header line
+      let s = t.replace(/^(>\s?)+/, "");
+      if ((m = /^([-*+]|\d{1,3}[.)])\s+(.*)$/.exec(s))) { flushP(); out.push({ t: inline(m[2]) }); return; }
+      if (/^\|.*\|$/.test(s)) s = s.slice(1, -1).split("|").map(c => c.trim()).filter(Boolean).join(", ");
+      para.push(inline(s));
+    });
+    flushP();
+    return out.filter(b => b.t && /[\p{L}\p{N}]/u.test(b.t));
+  }
+  // ePub: the package file (.opf) gives the title and the reading order; the table of contents gives chapter titles.
+  function parseXml(s) {
+    try { const d = new DOMParser().parseFromString(s, "application/xml"); return d.getElementsByTagName("parsererror").length ? null : d; } catch { return null; }
+  }
+  const byTag = (root, tag) => Array.from(root.getElementsByTagNameNS("*", tag));
+  // A path inside the zip, relative to the file that mentions it ("OEBPS/content.opf" + "text/ch%201.xhtml").
+  function zipPath(base, href) {
+    try { return decodeURIComponent(new URL(String(href || ""), "https://z/" + String(base || "")).pathname.slice(1)); } catch { return String(href || ""); }
+  }
+  function epubPlan(opfPath, opfXml) {
+    const opf = parseXml(opfXml);
+    if (!opf) throw userErr("This ePub file looks damaged (its list of chapters can't be read).");
+    const items = new Map();
+    for (const it of byTag(opf, "item")) items.set(it.getAttribute("id"), { href: zipPath(opfPath, it.getAttribute("href")), type: it.getAttribute("media-type") || "", props: it.getAttribute("properties") || "" });
+    const spineEl = byTag(opf, "spine")[0];
+    const spine = byTag(opf, "itemref").filter(r => r.getAttribute("linear") !== "no").map(r => items.get(r.getAttribute("idref")))
+      .filter(x => x && /html|xml/i.test(x.type || "html")).map(x => x.href);
+    const titleEl = byTag(opf, "title")[0];
+    const nav = [...items.values()].find(x => /(^|\s)nav(\s|$)/.test(x.props));
+    const ncx = (spineEl && items.get(spineEl.getAttribute("toc"))) || [...items.values()].find(x => /ncx/i.test(x.type));
+    return { title: titleEl ? titleEl.textContent.replace(/\s+/g, " ").trim() : "", spine, nav: nav ? nav.href : "", ncx: ncx ? ncx.href : "" };
+  }
+  // Chapter titles: file path -> the first title in the table of contents that points at it.
+  function epubToc(tocPath, src, isNav) {
+    const out = new Map();
+    const add = (href, t) => {
+      if (!href) return;
+      const p = zipPath(tocPath, String(href).split("#")[0]), tt = String(t || "").replace(/\s+/g, " ").trim();
+      if (p && tt && !out.has(p)) out.set(p, tt);
+    };
+    if (isNav) {
+      const d = parseMarkup(src, true), navs = Array.from(d.getElementsByTagName("nav"));
+      const nav = navs.find(n => /\btoc\b/.test(n.getAttribute("epub:type") || n.getAttribute("role") || "")) || navs[0];
+      if (nav) for (const a of nav.getElementsByTagName("a")) add(a.getAttribute("href"), a.textContent);
+    } else {
+      const d = parseXml(src);
+      if (d) for (const np of byTag(d, "navPoint")) { const lab = byTag(np, "text")[0], c = byTag(np, "content")[0]; add(c && c.getAttribute("src"), lab && lab.textContent); }
+    }
+    return out;
+  }
+  const pauseFrame = () => new Promise(res => setTimeout(res, 0));
+  async function epubRaw(file, key, fallbackName, onProgress) {
+    const JSZip = await needLib("JSZip", JSZIP_URL);
+    let zip;
+    try { zip = await JSZip.loadAsync(await file.arrayBuffer()); } catch (e) { console.warn(e); throw userErr("This file isn't a readable ePub (it couldn't be unpacked)."); }
+    const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const zf = p => zip.file(p) || zip.file(new RegExp("^" + esc(p) + "$", "i"))[0] || null;
+    const read = async p => { const f = p ? zf(p) : null; return f ? f.async("string") : null; };
+    const container = await read("META-INF/container.xml"), cd = container ? parseXml(container) : null;
+    const rf = cd ? byTag(cd, "rootfile")[0] : null;
+    const opfPath = (rf && rf.getAttribute("full-path")) || Object.keys(zip.files).find(n => /\.opf$/i.test(n)) || "";
+    const opfXml = await read(opfPath);
+    if (!opfXml) throw userErr("This ePub file looks damaged (its list of chapters is missing).");
+    const plan = epubPlan(opfPath, opfXml);
+    if (!plan.spine.length) throw userErr("Couldn't find any chapters in this ePub.");
+    // Copy-protected (DRM) books have their chapters encrypted. (Fonts are sometimes "encrypted" too; that's fine.)
+    const enc = await read("META-INF/encryption.xml"), ed = enc ? parseXml(enc) : null;
+    if (ed) {
+      const locked = new Set(byTag(ed, "CipherReference").map(c => zipPath("", c.getAttribute("URI"))));
+      if (plan.spine.some(p => locked.has(p))) throw userErr("This book is copy-protected (DRM), so its text can't be read here. Books without DRM work.");
+    }
+    let toc = new Map();
+    try {
+      if (plan.nav) { const x = await read(plan.nav); if (x) toc = epubToc(plan.nav, x, true); }
+      if (!toc.size && plan.ncx) { const x = await read(plan.ncx); if (x) toc = epubToc(plan.ncx, x, false); }
+    } catch (e) { console.warn(e); }
+    const blocks = [];
+    for (let k = 0; k < plan.spine.length; k++) {
+      if (onProgress) onProgress(k + 1, plan.spine.length);
+      const p = plan.spine[k], src = await read(p);
+      if (!src) continue;
+      const d = parseMarkup(src, true), bs = htmlBlocks(d.body || d.documentElement);
+      if (!bs.length) continue;
+      // A chapter without a heading of its own gets its title from the table of contents.
+      const label = toc.get(p);
+      if (label && !bs.slice(0, 3).some(b => b.head)) blocks.push({ t: label, head: 1 });
+      for (const b of bs) blocks.push(b);
+      if (k % 4 === 3) await pauseFrame(); // big books: let the screen update between chapters
+    }
+    return rawFromBlocks(plan.title || fallbackName, key, "epub", blocks);
+  }
+  async function docxRaw(file, key, name) {
+    const mammoth = await needLib("mammoth", MAMMOTH_URL);
+    let res;
+    try { res = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() }, { convertImage: mammoth.images.imgElement(() => Promise.resolve({ src: "" })) }); }
+    catch (e) { console.warn(e); throw userErr("This Word file couldn't be read. Save it again as .docx or as a PDF and try again."); }
+    const d = new DOMParser().parseFromString(String(res && res.value || ""), "text/html");
+    return rawFromBlocks(name, key, "docx", htmlBlocks(d.body));
+  }
+  // Open any supported file (Open file, Library → Open a file, drag and drop).
+  function loadFile(file) {
+    if (!file) return;
+    const kind = fileKind(file);
+    if (kind === "pdf") { loadPdf(file); return; }
+    if (kind === "doc") { setStatus("Old Word files (.doc) can't be read here. Save it as .docx or as a PDF and open that.", true); return; }
+    if (!kind) { setStatus("That kind of file can't be read here. Pick a PDF, an ePub book, a Word file (.docx), a text or Markdown file, or a web page (.html).", true); return; }
+    loadOther(file, kind);
+  }
+  async function loadOther(file, kind) {
+    const my = ++loadToken;
+    pause(); setStatus("");
+    loading = null; pendingDoc = null; waiting = false; resumeWant = null;
+    const base = String(file.name || "").replace(/\.[^.]+$/, "").trim() || "Document";
+    const key = `ldr:pos:${file.name}:${file.size}`, t0 = performance.now();
+    loadStats.firstPlayable = loadStats.total = null;
+    showBusy(`Opening ${base}…`, 0.05, kind === "epub" ? "Books take a few seconds." : "");
+    try {
+      let r;
+      if (kind === "epub") r = await epubRaw(file, key, base, (k, n) => { if (my === loadToken) showBusy(`Opening ${base}…`, 0.05 + 0.85 * k / n, `Chapter file ${k} of ${n}`); });
+      else if (kind === "docx") r = await docxRaw(file, key, base);
+      else {
+        const text = String(await file.text()).replace(/^\uFEFF/, "");
+        if (kind === "html") {
+          const d = parseMarkup(text, false), title = String(d.title || "").replace(/\s+/g, " ").trim();
+          r = rawFromBlocks(title || base, key, "html", htmlBlocks(d.body || d.documentElement));
+        } else if (kind === "md") r = rawFromBlocks(base, key, "md", mdBlocks(text));
+        else { r = rawFromText(text); r.name = base; r.key = key; r.kind = "txt"; }
+      }
+      if (my !== loadToken) return;
+      showBusy(`Opening ${r.name}…`, 0.95);
+      await pauseFrame();
+      if (my !== loadToken) return;
+      const built = buildDoc(r);
+      loadStats.total = loadStats.firstPlayable = performance.now() - t0;
+      hideBusy();
+      if (!built.sentences.length) { renderText(); setStatus("Couldn't find any words in that file.", true); return; }
+      showDoc(r, built);
+      const libMsg = await libSaveDoc(r);
+      if (my !== loadToken) return;
+      if (libMsg) setStatus(libMsg, /couldn't/.test(libMsg));
+    } catch (e) {
+      console.error(e);
+      if (my !== loadToken) return;
+      hideBusy(); renderText();
+      setStatus(e && e.userMsg || (/didn't load|Couldn't load/.test(String(e && e.message)) ? "The part of the app that reads this kind of file didn't load. Check your connection and try again." : "Couldn't open that file. Try another one."), true);
+    }
+  }
+
   // Reading place, saved as the sentence's index plus its opening words, so it survives a settings change or
   // an app update that splits the text a little differently.
   function posOf(i) {
@@ -1599,7 +1897,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     if (wasPlaying) speakFrom(idx);
   }
 
-  $("file").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; closeSheet(); loadPdf(f); });
+  $("file").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; closeSheet(); loadFile(f); });
   $("scanFile").addEventListener("change", e => { const fs = [...e.target.files]; e.target.value = ""; const app = scanAppend; scanAppend = false; closeSheet(); loadImages(fs, app); });
   $("photoFile").addEventListener("change", e => { const fs = [...e.target.files]; e.target.value = ""; closeSheet(); loadImages(fs, false); });
   let dragDepth = 0;
@@ -1609,7 +1907,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   document.addEventListener("drop", e => {
     e.preventDefault(); dragDepth = 0; document.body.classList.remove("drag");
     const fs = e.dataTransfer ? [...e.dataTransfer.files] : [];
-    if (fs.length && fs.every(f => /^image\//i.test(f.type))) loadImages(fs, false); else if (fs[0]) loadPdf(fs[0]);
+    if (fs.length && fs.every(f => /^image\//i.test(f.type))) loadImages(fs, false); else if (fs[0]) loadFile(fs[0]);
   });
 
   // =====================================================================
@@ -1634,8 +1932,8 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     box.appendChild(frag);
     $("fname").textContent = doc.name;
     const words = navOf(doc).pre[S.length];
-    $("fmeta").textContent = doc.key === "sample" ? "Sample text · open a PDF to start"
-      : `${doc.pages} page${doc.pages === 1 ? "" : "s"} · ${Math.max(1, Math.round(words / (WPM * settings.rate)))} min${doc.ocr ? " · scanned" : ""}`;
+    $("fmeta").textContent = doc.key === "sample" ? "Sample text · open a file to start"
+      : `${isFlat(doc) ? KIND_NAMES[doc.kind] : `${doc.pages} page${doc.pages === 1 ? "" : "s"}`} · ${Math.max(1, Math.round(words / (WPM * listenRate())))} min${doc.ocr ? " · scanned" : ""}`;
     $("seek").max = Math.max(0, doc.sentences.length - 1);
     lastHl = -1;
     highlight(idx, true, true);
@@ -1683,17 +1981,32 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     if (c) return c;
     const S = d.sentences, pre = [0];
     S.forEach((s, i) => pre.push(pre[i] + (s.skip ? (i && S[i - 1].run === s.run ? 0 : 3) : wc(s.t))));
-    c = { pre, secs: sectionStarts(S), pages: pageStarts(S) };
+    const heads = S.reduce((a, s, i) => { if (s.head && !s.skip && !(i && S[i - 1].head)) a.push(i); return a; }, []);
+    c = { pre, secs: sectionStarts(S), pages: pageStarts(S), heads };
     navCache.set(d, c);
     return c;
   }
-  const secsPerWord = () => 60 / (WPM * settings.rate);
+  // v28: books and documents opened from other files are one long "page"; the player shows the chapter or heading
+  // being read instead of "Page 1 of 1".
+  const KIND_NAMES = { epub: "ePub book", docx: "Word document", txt: "Text file", md: "Markdown file", html: "Web page" };
+  const isFlat = d => !!(d && KIND_NAMES[d.kind]) && d.pages <= 1;
+  function sectionLabel(d, i) {
+    let k = -1;
+    for (const j of navOf(d).heads) { if (j <= i) k = j; else break; }
+    if (k < 0) return KIND_NAMES[d.kind] || "";
+    const t = d.sentences[k].t;
+    return t.length > 40 ? t.slice(0, 38).trim() + "…" : t;
+  }
+  const placeText = (d, i) => { const s = d.sentences[Math.max(0, Math.min(i, d.sentences.length - 1))]; return isFlat(d) ? sectionLabel(d, i) : `Page ${s ? s.page : 1} of ${d.pages}`; };
+  // The speed actually heard: the phone voice stops at PHONE_MAX (see makeUtterance).
+  const listenRate = () => settings.natural ? settings.rate : phoneRate(settings.rate);
+  const secsPerWord = () => 60 / (WPM * listenRate());
   function updateProgress() {
-    const n = doc.sentences.length, s = doc.sentences[Math.min(idx, n - 1)], pre = navOf(doc).pre;
+    const n = doc.sentences.length, pre = navOf(doc).pre;
     if (!seeking) $("seek").value = Math.min(idx, n - 1);
-    $("pageInfo").textContent = `Page ${s ? s.page : 1} of ${doc.pages}`;
+    $("pageInfo").textContent = placeText(doc, idx);
     const words = pre[n] - pre[Math.max(0, Math.min(idx, n))];
-    const mins = words / (WPM * settings.rate);
+    const mins = words / (WPM * listenRate());
     const sl = sleepLabel();
     $("timeInfo").textContent = (mins < 1 ? "Under 1 min left" : mins < 60 ? `${Math.round(mins)} min left` : `${Math.floor(mins / 60)} h ${Math.round(mins % 60)} min left`) + (sl ? ` · ${sl}` : "");
   }
@@ -1820,9 +2133,32 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     return out;
   }
 
+  // v28: the pronunciation list (Settings → Pronunciations): "word → say as", whole words or phrases, any capitals,
+  // in one pass (longer entries first, so "New York Times" wins over "New York"). Applied first in speakable(), to
+  // the words as they are on screen, so both voices (and "Copy clean text") use it.
+  let pronC = { sig: null, re: null, map: null };
+  const pronKey = t => String(t).toLowerCase().replace(/\s+/g, " ").trim();
+  function pronRules(list) {
+    const rows = (Array.isArray(list) ? list : []).filter(p => p && typeof p.from === "string" && typeof p.to === "string" && /[\p{L}\p{N}]/u.test(p.from));
+    const sig = JSON.stringify(rows.map(p => [p.from, p.to]));
+    if (pronC.sig === sig) return pronC;
+    const map = new Map();
+    for (const p of rows) { const k = pronKey(p.from); if (k && !map.has(k)) map.set(k, p.to.replace(/\s+/g, " ").trim()); }
+    const esc = s => s.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&").replace(/ /g, "\\s+");
+    const keys = [...map.keys()].sort((a, b) => b.length - a.length);
+    let re = null;
+    try { if (keys.length) re = new RegExp(`(^|[^\\p{L}\\p{N}])(${keys.map(esc).join("|")})(?![\\p{L}\\p{N}])`, "giu"); } catch (e) { console.warn(e); re = null; }
+    pronC = { sig, re, map };
+    return pronC;
+  }
+  function applyPron(t, list) {
+    const c = pronRules(list === undefined ? settings.pron : list);
+    if (!c.re || !t) return t;
+    return String(t).replace(c.re, (m, pre, w) => { const to = c.map.get(pronKey(w)); return to == null ? m : pre + to; });
+  }
   // What the voice says (the screen still shows the original text).
   function speakable(t) {
-    let s = t;
+    let s = applyPron(t);
     if (settings.skipClutter) {
       s = s.replace(/\s?\((?:see |e\.g\.,? |cf\.? )?(?:[A-Z][\p{L}'’\-]+(?:,? (?:et al\.?|and|&) ?(?:[A-Z][\p{L}'’\-]+)?)?,? (?:19|20)\d\d[a-z]?(?:[,:] ?(?:pp?\. ?)?[\d\-–]+)?;? ?)+\)/gu, "");
       s = s.replace(/\[\d+(?:[,–\-]\s*\d+)*\]/g, "");
@@ -1884,14 +2220,19 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     if (nextIsNewPage) ms = 1000;
     else if (endsSentence) ms = /[?!]["'”’)\]]*$/.test(part) ? 560 : 460;
     else ms = /[;:]$/.test(part) ? 300 : /[—–-]$/.test(part) ? 260 : 190;
-    return ms * (PAUSE_SCALE[settings.pauses] || 1) / Math.max(0.9, settings.rate);
+    return ms * (PAUSE_SCALE[settings.pauses] || 1) / Math.max(0.9, listenRate());
   }
 
+  // v28: speed goes from 0.5× to 3×. The phone voice is held at 2× (the old top speed): whether the iPhone's own
+  // voices go any faster through Safari is not checked (unverified), and some desktop voices fail at high rates.
+  // The natural voice uses the full range (playbackRate).
+  const PHONE_MAX = 2;
+  function phoneRate(r) { return Math.min(Number(r) || 1, PHONE_MAX); }
   function makeUtterance(text, d, voice) {
     const u = new SpeechSynthesisUtterance(text);
     const v = voice || currentVoice();
     if (v) { u.voice = v; u.lang = v.lang; }
-    u.rate = Math.max(0.5, Math.min(settings.rate * (d ? d.rate : 1), 3));
+    u.rate = Math.max(0.5, Math.min(phoneRate(settings.rate) * (d ? d.rate : 1), 3));
     u.pitch = PITCH; u.volume = 1; // see VOICE QUALITY RULE: pitch is never changed
     return u;
   }
@@ -1937,7 +2278,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     box.innerHTML = "";
     if (!cast.length) return;
     const nat = useNatural();
-    $("castNote").textContent = nat ? "This reading looks like a play. With the natural voice each character gets a voice of their own (up to 9 characters; after that, voices are shared). Tap a character to try another voice."
+    $("castNote").textContent = nat ? "This reading looks like a play. With the natural voice each character gets a voice of their own (up to 27 characters; after that, voices are shared). Tap a character to try another voice."
       : "This reading looks like a play. Each character gets their own voice when this device has enough good (Premium, Enhanced or Natural) voices; otherwise they share yours and their names are read out. Tap a character to try another good voice.";
     const m = nat ? nvCastMap(doc) : castMap(), narr = nat ? null : currentVoice();
     for (const name of cast) {
@@ -1954,7 +2295,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   $("castList").addEventListener("click", e => {
     const b = e.target.closest(".row[data-who]"); if (!b) return;
     if (useNatural()) {
-      // Natural voice: step through the other 9 voices (never the narrator's).
+      // Natural voice: step through the other 27 voices (never the narrator's).
       const who = b.dataset.who, ids = KOKORO.VOICES.map(v => v[0]).filter(id => id !== nvVoiceId());
       const cur = nvCastMap(doc)[who], next = ids[(ids.indexOf(cur && cur.voice) + 1) % ids.length];
       settings.nvCast = settings.nvCast || {};
@@ -2082,7 +2423,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   }
   // Is it time to stop before sentence `next`?
   function sleepDue(next) {
-    const m = sleep.mode, S = doc.sentences;
+    const m = sleep.mode === "page" && isFlat(doc) ? "section" : sleep.mode, S = doc.sentences; // (one-page book: its chapters)
     if (m === "off") return false;
     if (/^\d+$/.test(m)) return Date.now() >= sleep.until;
     if (!next || !S[next]) return true;
@@ -2111,8 +2452,10 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   }
   // The car's and lock screen's next / previous buttons (setting "Car skip buttons").
   function carSkip(dir) {
-    const mode = settings.carSkip;
+    let mode = settings.carSkip;
     if (mode !== "sentence" && mode !== "page" && mode !== "section") { skipSeconds(10 * dir); return; }
+    // v28: a book or document opened as one page: "page" means its chapters/headings; with none, 10 seconds.
+    if (isFlat(doc) && mode !== "sentence") { if (navOf(doc).secs.length < 2) { skipSeconds(10 * dir); return; } mode = "section"; }
     const n = doc.sentences.length;
     const t = skipTarget(doc.sentences, idx, mode, dir, playing && Date.now() - sentAt > 2500);
     if (t >= n) {
@@ -2203,7 +2546,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     seeking = true;
     const v = Number($("seek").value), s = doc.sentences[v];
     if (!playing) { idx = v; highlight(idx, true); }
-    else if (s) $("pageInfo").textContent = `Page ${s.page} of ${doc.pages}`;
+    else if (s) $("pageInfo").textContent = placeText(doc, v);
   });
   $("seek").addEventListener("change", () => { seeking = false; jumpTo(Number($("seek").value)); });
   ["pointerup", "touchend", "blur"].forEach(ev => $("seek").addEventListener(ev, () => { seeking = false; }));
@@ -2218,10 +2561,13 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   // =====================================================================
   // Speed button, settings sheet
   // =====================================================================
-  const SPEEDS = [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2];
+  const SPEEDS = [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2, 2.5, 3]; // the speed button; 2.5× and 3× only with the natural voice
   function syncSettingsUI() {
     $("speedBtn").textContent = (Math.round(settings.rate * 100) / 100).toString() + "×";
     $("rate").value = settings.rate; $("rateOut").textContent = Number(settings.rate).toFixed(2) + "×";
+    $("rateNote").textContent = settings.natural ? "0.5× to 3×. The natural voice changes speed at once, without changing the pitch of the voice."
+      : settings.rate > PHONE_MAX ? `The phone voice reads at most ${PHONE_MAX}× here, so it is reading at ${PHONE_MAX}×. The natural AI voice goes up to 3×. (Whether the iPhone's own voice could go faster hasn't been checked.)`
+      : `0.5× to 3×. The phone voice goes up to ${PHONE_MAX}×; faster speeds are for the natural AI voice. (Whether the iPhone's own voice could go faster hasn't been checked.)`;
     document.querySelectorAll("#pauseSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === settings.pauses)));
     document.querySelectorAll("#flowSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === (settings.delivery === "phrases" ? "phrases" : "flow"))));
     ["expressive", "skipClutter", "skipNotes", "bizSpeak", "follow", "allLangs", "autoNext"].forEach(k => { $(k).checked = !!settings[k]; });
@@ -2240,7 +2586,8 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     if (restart && playing) { clearTimeout(speedTimer); speedTimer = setTimeout(() => { if (playing) speakFrom(idx); }, 250); }
   }
   $("speedBtn").addEventListener("click", () => {
-    const next = SPEEDS.find(s => s > settings.rate + 0.001) || SPEEDS[0];
+    const list = SPEEDS.filter(s => settings.natural || s <= PHONE_MAX);
+    const next = list.find(s => s > settings.rate + 0.001) || list[0];
     setRate(next, true);
   });
   $("rate").addEventListener("input", () => setRate(Number($("rate").value), false));
@@ -2291,26 +2638,61 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   let lastFocus = null;
   function openSheet() {
     lastFocus = document.activeElement;
-    loadVoices(); renderVoiceSection(); renderCast(); syncSettingsUI();
+    loadVoices(); renderVoiceSection(); renderCast(); renderPron(); syncSettingsUI();
     $("scrim").hidden = false; $("sheet").hidden = false; $("sheetDone").focus();
   }
   function closeSheet() {
     const wasOpen = !$("sheet").hidden || !$("lib").hidden;
-    $("scrim").hidden = true; $("sheet").hidden = true; $("lib").hidden = true; confirmKey = null;
+    $("scrim").hidden = true; $("sheet").hidden = true; $("lib").hidden = true; confirmKey = null; noteEdit = null;
     if (wasOpen && lastFocus && lastFocus.focus) lastFocus.focus();
   }
   $("gear").addEventListener("click", openSheet);
   $("sheetDone").addEventListener("click", closeSheet);
   $("scrim").addEventListener("click", closeSheet);
 
+  // v28: Settings → Pronunciations ("word → say as").
+  function renderPron() {
+    const box = $("pronList"), list = Array.isArray(settings.pron) ? settings.pron : [];
+    box.innerHTML = ""; box.hidden = !list.length;
+    list.forEach((p, k) => {
+      const row = document.createElement("div");
+      row.className = "row"; row.dataset.k = String(k);
+      row.innerHTML = `<span class="grow"><span class="nm"></span></span><button class="pbtn" data-act="hear">Hear</button><button class="xbtn" data-act="rm">${X_SVG}</button>`;
+      row.querySelector(".nm").textContent = `${p.from} → ${p.to}`;
+      row.querySelector("[data-act=hear]").setAttribute("aria-label", `Hear ${p.to}`);
+      row.querySelector("[data-act=rm]").setAttribute("aria-label", `Remove ${p.from}`);
+      box.appendChild(row);
+    });
+  }
+  function addPron() {
+    const from = $("pronFrom").value.replace(/\s+/g, " ").trim(), to = $("pronTo").value.replace(/\s+/g, " ").trim();
+    if (!/[\p{L}\p{N}]/u.test(from)) { $("pronFrom").focus(); return; }
+    if (!/[\p{L}\p{N}]/u.test(to)) { $("pronTo").focus(); return; }
+    const list = (Array.isArray(settings.pron) ? settings.pron : []).filter(p => pronKey(p.from) !== pronKey(from));
+    list.push({ from: from.slice(0, 60), to: to.slice(0, 80) });
+    settings.pron = list.slice(-200); saveSettings(); renderPron();
+    $("pronFrom").value = ""; $("pronTo").value = ""; $("pronFrom").focus();
+  }
+  $("pronAdd").addEventListener("click", addPron);
+  ["pronFrom", "pronTo"].forEach(id => $(id).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addPron(); } }));
+  $("pronList").addEventListener("click", e => {
+    const b = e.target.closest("[data-act]"), row = e.target.closest("[data-k]");
+    if (!b || !row) return;
+    const k = Number(row.dataset.k), list = Array.isArray(settings.pron) ? settings.pron : [], p = list[k];
+    if (!p) return;
+    if (b.dataset.act === "rm") { settings.pron = list.filter((_, j) => j !== k); saveSettings(); renderPron(); return; }
+    if (playing) pause();
+    if (useNatural()) { hardStop(); nvSay(p.to, nvVoiceId()); } else preview(p.to);
+  });
+
   // =====================================================================
   // Library sheet: Readings (open, scan, paste, recent readings), Contents, Bookmarks
   // =====================================================================
-  let libTab = "readings", confirmKey = null;
+  let libTab = "readings", confirmKey = null, noteEdit = null; // noteEdit = the bookmark (its time) whose note is being written
   const X_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   function openLib(tab) {
     lastFocus = document.activeElement;
-    confirmKey = null; $("pasteBox").hidden = true; $("pasteBtn").setAttribute("aria-expanded", "false");
+    confirmKey = null; $("pasteBox").hidden = true; $("pasteBtn").setAttribute("aria-expanded", "false"); $("txtBox").hidden = true;
     showLibTab(tab || libTab);
     $("scrim").hidden = false; $("lib").hidden = false; $("libDone").focus();
   }
@@ -2336,6 +2718,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   }
   function renderLib() {
     const box = $("libList"), list = libList();
+    $("thisBox").hidden = doc.key === "sample" || !doc.sentences.length;
     box.innerHTML = "";
     if (!list.length) { box.innerHTML = '<div class="row"><span class="grow">No readings yet<small>Open a PDF, scan pages or paste text. Each one is kept here with your place in it.</small></span></div>'; return; }
     for (const e of list) {
@@ -2348,7 +2731,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
       } else {
         row.innerHTML = `<button class="lib-open grow" data-act="open"><span class="nm"></span><small></small></button><button class="xbtn" data-act="ask">${X_SVG}</button>`;
         row.querySelector(".nm").textContent = e.name;
-        const kind = e.kind === "text" ? "Pasted text" : `${e.pages} ${e.kind === "scan" ? "scanned " : ""}page${e.pages === 1 ? "" : "s"}`;
+        const kind = e.kind === "text" ? "Pasted text" : KIND_NAMES[e.kind] || `${e.pages} ${e.kind === "scan" ? "scanned " : ""}page${e.pages === 1 ? "" : "s"}`;
         const state = e.missing ? "not on this phone any more" : e.done ? "Finished" : `${Math.round((e.prog || 0) * 100)}%`;
         row.querySelector("small").textContent = [kind, state, e.key === doc.key ? "open now" : ago(e.opened)].join(" · ");
         row.querySelector(".xbtn").setAttribute("aria-label", `Remove ${e.name}`);
@@ -2386,6 +2769,63 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     if (readPasted(t)) { $("pasteText").value = ""; $("pasteBox").hidden = true; closeSheet(); }
   });
 
+  // v28: "Copy clean text" / "Save as a .txt file" for the open reading: what the voice reads (speakable(): citations
+  // and footnote numbers out, business shorthand and pronunciations as set), without skipped tables, exhibits and
+  // reference lists; a blank line between paragraphs, headings on their own line.
+  function cleanText(d) {
+    const out = [];
+    let para = "", prevHead = false;
+    const flush = () => { if (para) out.push(para); para = ""; };
+    for (const s of d.sentences || []) {
+      if (s.skip) { flush(); prevHead = false; continue; }
+      const t = speakable(s.t);
+      if (!/[\p{L}\p{N}]/u.test(t)) continue;
+      if (s.head ? !prevHead : (s.para || prevHead)) flush();
+      para = para ? para + " " + t : t;
+      prevHead = !!s.head;
+    }
+    flush();
+    return out.length ? out.join("\n\n") + "\n" : "";
+  }
+  const IN_FRAME = (() => { try { return window.top !== window.self; } catch { return true; } })();
+  const txtName = () => (String(doc.name || "Reading").replace(/[\\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "Reading") + ".txt";
+  function showTxtBox(text, note) {
+    $("txtOut").value = text; $("txtNote").textContent = note; $("txtBox").hidden = false;
+    try { $("txtOut").focus(); $("txtOut").select(); } catch {}
+  }
+  $("copyBtn").addEventListener("click", async () => {
+    const text = cleanText(doc);
+    if (!text) { setStatus("There's no text to copy in this reading.", true); return; }
+    let ok = false;
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); ok = true; } } catch (e) { console.warn(e); }
+    if (ok) { $("txtBox").hidden = true; setStatus(`Copied the text of “${doc.name}” (${wc(text).toLocaleString()} words). Paste it into any app.`, false, null, 6000); return; }
+    // Inside claude.ai's frame the page may not be allowed to copy by itself: show the text to copy by hand.
+    showTxtBox(text, "This page can't copy by itself here. Tap Copy below, or press and hold the text, choose Select All, then Copy.");
+  });
+  $("txtCopy").addEventListener("click", () => {
+    const ta = $("txtOut");
+    let ok = false;
+    try { ta.focus(); ta.select(); ta.setSelectionRange(0, ta.value.length); ok = document.execCommand("copy"); } catch {}
+    $("txtNote").textContent = ok ? "Copied. Paste it into any app." : "Couldn't copy by itself. Press and hold the text, choose Select All, then Copy.";
+  });
+  $("txtClose").addEventListener("click", () => { $("txtBox").hidden = true; });
+  $("saveTxtBtn").addEventListener("click", () => {
+    const text = cleanText(doc), name = txtName();
+    if (!text) { setStatus("There's no text to save in this reading.", true); return; }
+    let started = false;
+    try {
+      const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = name; a.rel = "noopener"; a.style.display = "none";
+      document.body.appendChild(a); a.click(); a.remove(); started = true;
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { console.warn(e); }
+    // (Whether the download happened can't be seen from the page. Inside claude.ai downloads may be blocked, so the
+    // text is shown there as well.)
+    if (!started || IN_FRAME) showTxtBox(text, `If “${name}” didn't download (inside claude.ai downloads may be blocked), copy the text from this box instead.`);
+    else setStatus(`“${name}” should be in your downloads now (on iPhone: Files → Downloads). If nothing appeared, use Copy clean text.`, false, null, 8000);
+  });
+
   function renderToc() {
     const box = $("tocList"), items = contentsOf(doc);
     box.innerHTML = "";
@@ -2415,9 +2855,11 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     if (!n) return;
     const i = Math.min(idx, n - 1), list = marksOf(doc.key);
     if (list.some(m => findPos(m.pos, doc.sentences) === i)) { setStatus("This spot is already bookmarked.", false, null, 2500); return; }
-    list.push({ pos: posOf(i), at: Date.now() });
+    const at = Date.now();
+    list.push({ pos: posOf(i), at });
     if (!store.set("ldr:marks:" + doc.key, list)) { setStatus("Couldn't save the bookmark: the app's storage on this phone is full.", true); return; }
-    setStatus(`Bookmarked, page ${doc.sentences[i].page}. Find it in Library → Bookmarks.`, false, null, 3000);
+    // v28: an optional note, right away (the button opens Library → Bookmarks with the note field open).
+    setStatus(isFlat(doc) ? "Bookmarked." : `Bookmarked, page ${doc.sentences[i].page}.`, false, { label: "Add a note", fn: () => { noteEdit = at; openLib("marks"); } }, 6000);
     const b = $("markBtn"); b.classList.add("on"); setTimeout(() => b.classList.remove("on"), 1500);
   }
   $("markBtn").addEventListener("click", addMark);
@@ -2425,21 +2867,51 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     const box = $("markList"), list = marksOf(doc.key).map(m => ({ m, i: findPos(m.pos, doc.sentences) })).sort((a, b) => a.i - b.i);
     box.innerHTML = "";
     if (!list.length) { box.innerHTML = '<div class="row"><span class="grow">No bookmarks in this reading yet.</span></div>'; return; }
+    let focusEl = null;
     for (const { m, i } of list) {
       const row = document.createElement("div"), s = doc.sentences[i];
       row.className = "row"; row.dataset.at = String(m.at);
-      row.innerHTML = `<button class="lib-open grow" data-act="go"><span class="nm"></span><small></small></button><button class="xbtn" data-act="rm" aria-label="Remove this bookmark">${X_SVG}</button>`;
-      row.querySelector(".nm").textContent = s ? s.t.slice(0, 90) : String(m.pos.t || "");
-      row.querySelector("small").textContent = `Page ${s ? s.page : m.pos.p || 1} · marked ${new Date(m.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
-      row.querySelector("[data-act=go]").dataset.i = String(i);
+      if (noteEdit === m.at) {
+        row.classList.add("prow");
+        row.innerHTML = '<input class="tin" data-note maxlength="300" placeholder="A few words about this spot" aria-label="Note for this bookmark"><button class="pbtn" data-act="ncancel">Cancel</button><button class="pbtn" data-act="nsave">Save</button>';
+        const inp = row.querySelector("[data-note]"); inp.value = m.note || ""; focusEl = inp;
+      } else {
+        row.innerHTML = `<button class="lib-open grow" data-act="go"><span class="nm"></span><small></small><span class="mnote" hidden></span></button><button class="pbtn" data-act="note"></button><button class="xbtn" data-act="rm" aria-label="Remove this bookmark">${X_SVG}</button>`;
+        row.querySelector(".nm").textContent = s ? s.t.slice(0, 90) : String(m.pos.t || "");
+        row.querySelector("small").textContent = `${isFlat(doc) ? sectionLabel(doc, i) : `Page ${s ? s.page : m.pos.p || 1}`} · marked ${new Date(m.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+        if (m.note) { const nt = row.querySelector(".mnote"); nt.textContent = m.note; nt.hidden = false; }
+        const nb = row.querySelector("[data-act=note]");
+        nb.textContent = m.note ? "Edit" : "Note"; nb.setAttribute("aria-label", m.note ? "Edit the note of this bookmark" : "Add a note to this bookmark");
+        row.querySelector("[data-act=go]").dataset.i = String(i);
+      }
       box.appendChild(row);
     }
+    if (focusEl) requestAnimationFrame(() => { try { focusEl.focus(); focusEl.scrollIntoView({ block: "center" }); } catch {} });
+  }
+  function saveNote(row) {
+    const inp = row.querySelector("[data-note]"), list = marksOf(doc.key), m = list.find(x => String(x.at) === row.dataset.at);
+    if (m && inp) {
+      const v = inp.value.replace(/\s+/g, " ").trim().slice(0, 300);
+      if (v) m.note = v; else delete m.note;
+      if (!store.set("ldr:marks:" + doc.key, list)) setStatus("Couldn't save the note: the app's storage on this phone is full.", true);
+    }
+    noteEdit = null; renderMarks();
   }
   $("markList").addEventListener("click", e => {
     const b = e.target.closest("[data-act]"), row = e.target.closest("[data-at]");
     if (!b || !row) return;
-    if (b.dataset.act === "go") { closeSheet(); jumpTo(Number(b.dataset.i)); }
-    else { store.set("ldr:marks:" + doc.key, marksOf(doc.key).filter(m => String(m.at) !== row.dataset.at)); renderMarks(); }
+    const act = b.dataset.act;
+    if (act === "go") { closeSheet(); jumpTo(Number(b.dataset.i)); }
+    else if (act === "note") { noteEdit = Number(row.dataset.at); renderMarks(); }
+    else if (act === "nsave") saveNote(row);
+    else if (act === "ncancel") { noteEdit = null; renderMarks(); }
+    else if (act === "rm") { store.set("ldr:marks:" + doc.key, marksOf(doc.key).filter(m => String(m.at) !== row.dataset.at)); renderMarks(); }
+  });
+  $("markList").addEventListener("keydown", e => {
+    const row = e.target.closest && e.target.closest("[data-at]");
+    if (!row || !e.target.matches("[data-note]")) return;
+    if (e.key === "Enter") { e.preventDefault(); saveNote(row); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); noteEdit = null; renderMarks(); }
   });
 
   // =====================================================================
@@ -2465,9 +2937,8 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   function stopCarrier() { try { carrier.pause(); } catch {} }
   function updateMedia() {
     if (!("mediaSession" in navigator)) return;
-    const s = doc.sentences[Math.min(idx, doc.sentences.length - 1)];
     try {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: doc.name, artist: `Page ${s ? s.page : 1} of ${doc.pages}`, album: "Long Drive Reader" });
+      navigator.mediaSession.metadata = new MediaMetadata({ title: doc.name, artist: placeText(doc, idx), album: "Long Drive Reader" });
       navigator.mediaSession.playbackState = playing ? "playing" : "paused";
     } catch {}
     // Lock screen / car progress bar: estimated length of the whole reading and time already listened (from the
@@ -2520,15 +2991,18 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     bizText, captionOf, numericLine, rawFromText, contentsOf, sectionStarts, skipTarget, libUpsert, libRemove, nextUp, libList,
     get doc() { return doc; }, get raw() { return raw; }, get loadStats() { return loadStats; }, ocrInfo, settings,
     // Natural voice (v23): pure parts, and a summary of the engine's state.
-    nvPlan, nvChain, nvJob, nvCastMap, nvShouldGrow, nvSimulate, wavHeader, nvToPcm, nvSilenceSamples, nvGenArgs, get natural() { return nvInfo(); }
+    nvPlan, nvChain, nvJob, nvCastMap, nvShouldGrow, nvSimulate, wavHeader, nvToPcm, nvSilenceSamples, nvGenArgs, get natural() { return nvInfo(); },
+    // v28: pronunciations, clean text, other files, speed cap, offline copy.
+    applyPron, cleanText, fileKind, htmlBlocks, mdBlocks, rawFromBlocks, epubPlan, epubToc, phoneRate, swAllowedFor, get offline() { return SW_OK; }
   };
 
   // Checks of the text logic on made-up input; printed at the top of the self-test.
   function unitChecks(log) {
     const eq = (name, got, want) => log(`unit ${got === want ? "ok  " : "FAIL"} ${name}${got === want ? "" : ` -> got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`}`);
     const keep = { skipClutter: settings.skipClutter, skipNotes: settings.skipNotes, bizSpeak: settings.bizSpeak,
-      rate: settings.rate, pauses: settings.pauses, sayNames: settings.sayNames, nvVoice: settings.nvVoice, nvCast: settings.nvCast };
+      rate: settings.rate, pauses: settings.pauses, sayNames: settings.sayNames, nvVoice: settings.nvVoice, nvCast: settings.nvCast, pron: settings.pron };
     settings.skipClutter = true; settings.skipNotes = true; settings.bizSpeak = true;
+    settings.pron = []; // (her own pronunciation list must not change the expected results)
     try {
       { // v26: letter-spaced words are joined; a case's number, revision date and author line on page 1 are skipped.
         const sp = (s, x0, step) => [...s].map((ch, k) => ({ s: ch, x: x0 + k * step, w: 6, size: 10 })).filter(it => it.s !== " ");
@@ -2666,9 +3140,11 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
       settings.nvVoice = "af_heart"; settings.nvCast = {}; settings.sayNames = null;
       const cd = { key: "unit-cast", pages: 1, cast: ["A", "B", "C"], sentences: [] }, cm = nvCastMap(cd);
       eq("natural cast: each gets their own voice, never the narrator's", ["A", "B", "C"].map(n => cm[n].voice + (cm[n].own ? "" : "!")).join(","), "af_bella,af_nicole,am_michael");
-      const big = nvCastMap({ key: "unit-cast", cast: "ABCDEFGHIJ".split("") });
-      eq("natural cast: 10 characters share 9 voices (first and last)", big.A.voice === big.J.voice && !big.A.own && big.B.own && Object.values(big).every(c => c.voice !== "af_heart"), true);
-      eq("natural cast: names not read when everyone has a voice", nvSayNames(cd) + "|" + nvSayNames({ key: "unit-cast", cast: "ABCDEFGHIJ".split("") }), "false|true");
+      // v28: 27 voices for characters (28 minus the narrator's), so 10 characters all get their own; 28 share once.
+      const ten = nvCastMap({ key: "unit-cast", cast: "ABCDEFGHIJ".split("") }), many = Array.from({ length: 28 }, (_, k) => "C" + k);
+      const big = nvCastMap({ key: "unit-cast", cast: many });
+      eq("natural cast: 10 characters each get their own voice; 28 share 27 (first and last)", Object.values(ten).every(c => c.own) && big.C0.voice === big.C27.voice && !big.C0.own && big.C1.own && Object.values(big).every(c => c.voice !== "af_heart"), true);
+      eq("natural cast: names not read when everyone has a voice", nvSayNames(cd) + "|" + nvSayNames({ key: "unit-cast", cast: many }), "false|true");
       settings.nvCast = { "unit-cast": { B: "bm_george" } };
       eq("natural cast: a voice picked by tapping is kept", nvCastMap(cd).B.voice, "bm_george");
       settings.nvCast = {};
@@ -2688,6 +3164,42 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
       const fast = nvSimulate({ units: 30, secs: 8, helpers: 2, speed: 0.8, rate: 1.2, target: 90, cap: 900 });
       const slow = nvSimulate({ units: 30, secs: 8, helpers: 1, speed: 0.5, rate: 1.2, target: 90, cap: 900 });
       eq("natural buffer (fake generator): 2 helpers at 0.8× keep up at 1.2×, 1 at 0.5× has to wait", (fast.stall === 0) + "|" + (slow.stall > 30), "true|true");
+      // v28: all 28 English natural voices, grouped; Heart stays the default.
+      eq("natural voices: 28 in 4 groups (11/9/4/4), Heart first, all with a grade", [KOKORO.VOICES.length, ...NV_GROUPS.map(g => KOKORO.VOICES.filter(v => v[0].startsWith(g[0] + "_")).length),
+        KOKORO.VOICES[0][0], KOKORO.VOICES.every(v => /^[A-F][+-]?$/.test(v[3] || "")), new Set(KOKORO.VOICES.map(v => v[0])).size].join(","), "28,11,9,4,4,af_heart,true,28");
+      // v28: pronunciation list, whole words, any capitals, phrases; used by the phone voice (speakable) and the natural voice (nvJob).
+      settings.pron = [{ from: "Kaiser", to: "Ky-zer" }, { from: "New York Times", to: "the Times" }, { from: "New York", to: "NYC" }];
+      eq("pronunciation: whole words, any capitals, phrases, both voices", [applyPron("Kaiser met KAISER in Kaiserslautern."), speakable("Ask Kaiser (Smith, 2004)."),
+        nvJob({ key: "unit-p", cast: [], sentences: [{ t: "The New  York Times and New York." }] }, 0).pieces[0].text].join("|"), "Ky-zer met Ky-zer in Kaiserslautern.|Ask Ky-zer.|The the Times and NYC.");
+      settings.pron = [];
+      eq("pronunciation: an empty list changes nothing", applyPron("Kaiser (x) a+b."), "Kaiser (x) a+b.");
+      // v28: clean text for other apps: what is read, no skipped blocks, paragraphs and headings kept.
+      eq("clean text: what is read, no skipped blocks, paragraphs kept", cleanText({ sentences: [{ t: "Chapter One", head: true, para: true }, { t: "It began (Smith, 2004) here.", para: true }, { t: "It went on." },
+        { t: "Exhibit 1 Sales", skip: "Exhibit 1", run: 1 }, { t: "West 1,200", skip: "Exhibit 1", run: 1 }, { t: "The end.", para: true }] }), "Chapter One\n\nIt began here. It went on.\n\nThe end.\n");
+      // v28: speed 0.5–3×; the phone voice is held at 2×.
+      eq("speed: 0.5–3× in 0.05 steps; the phone voice stops at 2×", [phoneRate(3), phoneRate(0.5), phoneRate(1.75), $("rate").min, $("rate").max, $("rate").step].join(","), "2,0.5,1.75,0.5,3,0.05");
+      // v28: the offline copy only on a normal top-level https page, never inside claude.ai.
+      eq("offline copy: only on a top-level https page outside claude.ai", [swAllowedFor({ sw: true, inFrame: true, secure: true, host: "example.github.io" }), swAllowedFor({ sw: true, inFrame: false, secure: true, host: "abc.claudeusercontent.com" }),
+        swAllowedFor({ sw: true, inFrame: false, secure: false, host: "example.github.io" }), swAllowedFor({ sw: true, inFrame: false, secure: true, host: "example.github.io" })].join(","), "false,false,false,true");
+      // v28: other files.
+      eq("open file: kind from the name", ["a.PDF", "b.epub", "c.docx", "d.md", "e.html", "f.txt", "g.doc", "h.xyz"].map(n => fileKind({ name: n, type: "" }) || "-").join(","), "pdf,epub,docx,md,html,txt,doc,-");
+      const tag = b => (b.head ? "#" + b.head + " " : b.br ? "+ " : "") + b.t;
+      eq("markdown: headings, links, emphasis, lists; code and front matter left out", mdBlocks("---\ntitle: x\n---\n# Title\n\nSome **bold** and [a link](http://x.y) text.\nNext line.\n\n```\ncode()\n```\n- First item\n- Second item\n\nSub\n---\n").map(tag).join("|"),
+        "#1 Title|Some bold and a link text.|+ Next line.|First item|Second item|#2 Sub");
+      // (The lines below need the browser's own HTML/XML reader, DOMParser.)
+      const hdoc = new DOMParser().parseFromString('<body><h1>Chapter 1</h1><p>It was a dark night<sup>1</sup>. The rain fell.</p><' + 'script>x()<' + '/script><nav>Menu</nav><p>Line one<br>line two.</p><h2>Part Two</h2><ul><li>An item here.</li></ul></body>', "text/html");
+      const hb = htmlBlocks(hdoc.body);
+      eq("html: headings, paragraphs, line breaks; scripts, menus and note numbers left out", hb.map(tag).join("|"), "#1 Chapter 1|It was a dark night. The rain fell.|Line one|+ line two.|#2 Part Two|An item here.");
+      const bk = buildDoc(rawFromBlocks("Book", "unit-book", "epub", hb));
+      eq("book: chapters become contents entries, one page, no page numbers", contentsOf(bk).map(c => c.kind + ":" + c.label + ":" + c.sub).join("|") + "|" + bk.pages + "|" + isFlat(bk), "head:Chapter 1:|head:Part Two:|1|true");
+      const opf = '<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>A Book</dc:title></metadata><manifest>'
+        + '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="c1" href="text/ch%201.xhtml" media-type="application/xhtml+xml"/>'
+        + '<item id="c2" href="text/ch2.xhtml" media-type="application/xhtml+xml"/><item id="cv" href="cover.xhtml" media-type="application/xhtml+xml"/></manifest>'
+        + '<spine><itemref idref="cv" linear="no"/><itemref idref="c1"/><itemref idref="c2"/></spine></package>';
+      const ep = epubPlan("OEBPS/content.opf", opf);
+      const toc = epubToc(ep.nav, '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol><li><a href="text/ch%201.xhtml#s1">One</a></li><li><a href="text/ch2.xhtml">Two</a></li></ol></nav></body></html>', true);
+      eq("epub: title, reading order, chapter titles", [ep.title, ep.spine.join(","), ep.nav, [...toc].map(e => e.join("=")).join(",")].join("|"),
+        "A Book|OEBPS/text/ch 1.xhtml,OEBPS/text/ch2.xhtml|OEBPS/nav.xhtml|OEBPS/text/ch 1.xhtml=One,OEBPS/text/ch2.xhtml=Two");
     } catch (e) { log("unit FAILED to run: " + (e && e.stack || e)); }
     Object.assign(settings, keep);
   }
@@ -2752,10 +3264,20 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
       ttsP.catch(() => { ttsP = null; });
       return ttsP;
     }
+    // [id, name, description, grade]. v28: all 28 English voices of kokoro-js 1.2.1 (files under kokoro/voices/).
+    // The order is the order characters in a play get them: the 10 voices of v23–v27 first (so plays with up to 9
+    // characters keep the voices they had), then the 18 new ones, best grade first. The grade is the one kokoro-js
+    // lists for each voice ("overallGrade", A best … F worst), shown so the better ones are easy to find.
     const VOICES = [
-      ["af_heart", "Heart", "Warm American woman"], ["af_bella", "Bella", "Bright American woman"], ["af_nicole", "Nicole", "Soft American woman"],
-      ["am_michael", "Michael", "Calm American man"], ["am_fenrir", "Fenrir", "Deep American man"], ["am_puck", "Puck", "Lively American man"],
-      ["bf_emma", "Emma", "British woman"], ["bf_isabella", "Isabella", "British woman"], ["bm_george", "George", "British man"], ["bm_fable", "Fable", "British man"]
+      ["af_heart", "Heart", "Warm American woman", "A"], ["af_bella", "Bella", "Bright American woman", "A-"], ["af_nicole", "Nicole", "Soft American woman", "B-"],
+      ["am_michael", "Michael", "Calm American man", "C+"], ["am_fenrir", "Fenrir", "Deep American man", "C+"], ["am_puck", "Puck", "Lively American man", "C+"],
+      ["bf_emma", "Emma", "British woman", "B-"], ["bf_isabella", "Isabella", "British woman", "C"], ["bm_george", "George", "British man", "C"], ["bm_fable", "Fable", "British man", "C"],
+      ["af_aoede", "Aoede", "American woman", "C+"], ["af_kore", "Kore", "American woman", "C+"], ["af_sarah", "Sarah", "American woman", "C+"],
+      ["af_alloy", "Alloy", "American woman", "C"], ["af_nova", "Nova", "American woman", "C"], ["af_sky", "Sky", "American woman", "C-"],
+      ["bm_lewis", "Lewis", "British man", "D+"], ["am_echo", "Echo", "American man", "D"], ["am_eric", "Eric", "American man", "D"],
+      ["am_liam", "Liam", "American man", "D"], ["am_onyx", "Onyx", "American man", "D"], ["af_jessica", "Jessica", "American woman", "D"],
+      ["af_river", "River", "American woman", "D"], ["bf_alice", "Alice", "British woman", "D"], ["bf_lily", "Lily", "British woman", "D"],
+      ["bm_daniel", "Daniel", "British man", "D"], ["am_santa", "Santa", "American man", "D-"], ["am_adam", "Adam", "American man", "F+"]
     ];
     // A helper that runs the model in its own background thread (Web Worker). Several of them speak different
     // sentences at the same time, which is how the natural voice can keep ahead of playback.
@@ -2864,8 +3386,13 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     stored: { prefix: null, set: new Set(), loading: false },
     cur: null, waitKey: null, say: null, mode: "idle", url: "", started: false, buffering: false,
     showLoad: false, statusMine: "", slowSince: 0, slowShown: false, tipUntil: 0,
-    prep: null, idleTimer: null, pumping: false, again: false, sizeHint: null
+    prep: null, idleTimer: null, pumping: false, again: false, sizeHint: null, warmed: false
   };
+  // v28: the voice runtime files the offline copy keeps (website copy only). Not the model and not the voices:
+  // transformers.js keeps the model in its own browser cache ("transformers-cache") and kokoro-js keeps every voice
+  // it has used in its own cache ("kokoro-voices"), so keeping them again would store them twice (the model is 84 MB).
+  const NV_WARM = ["ort.part0.wasm", "ort.part1.wasm", "ort-wasm-simd-threaded.jsep.mjs", "config.json", "tokenizer.json", "tokenizer_config.json"]
+    .map(f => KOKORO.base + f).concat("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js");
   const nvVoiceId = () => NV_IDS.has(settings.nvVoice) ? settings.nvVoice : "af_heart";
   const nvVoiceRow = id => KOKORO.VOICES.find(v => v[0] === id) || KOKORO.VOICES[0];
   const nvVoiceName = id => nvVoiceRow(id)[1];
@@ -2952,7 +3479,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
       if (s.who) {
         const c = nvCastMap(d)[s.who];
         if (c) voice = c.voice;
-        if (s.lab) { t = t.slice(s.lab).trim(); if (nvSayNames(d)) pieces.push({ text: prettyCast(s.who) + ".", voice: narr }); }
+        if (s.lab) { t = t.slice(s.lab).trim(); if (nvSayNames(d)) pieces.push({ text: applyPron(prettyCast(s.who) + "."), voice: narr }); }
       }
       const sp = speakable(t);
       if (/[\p{L}\p{N}]/u.test(sp)) pieces.push({ text: sp, voice });
@@ -3056,6 +3583,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
       clearTimeout(h.timer);
       if (h.state !== "starting") return;
       h.state = "ready"; nv.everReady = true;
+      if (!nv.warmed) { nv.warmed = true; swWarm(NV_WARM); } // v28: keep the voice runtime for offline use (website copy only)
       nvStatus(); nvPump();
     }, e => { clearTimeout(h.timer); nvHelperDied(h, e); });
   }
@@ -3473,7 +4001,14 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   }
   function nvStateText() {
     const s = nvStateNow();
-    if (s === "failed") return `Couldn't start the natural voice: ${nv.why}. The phone voice is used instead. Tap Natural AI voice again to try once more.`;
+    if (s === "failed") {
+      // v28: inside claude.ai the voice files sometimes answer "forbidden" on iPhone (seen 2026-11-10 and 2026-11-14,
+      // cause unknown — unverified guess: the frame's file access runs out after the page has been open a while).
+      // The website copy serves plain public files, so point there.
+      const site = /couldn't fetch the voice file/.test(nv.why || "") && !/github\.io$/.test(location.hostname)
+        ? " Reload the page, or use the website copy, which doesn't have this problem: stacey98.github.io/long-drive-reader" : "";
+      return `Couldn't start the natural voice: ${nv.why}. The phone voice is used instead.${site || " Tap Natural AI voice again to try once more."}`;
+    }
     if (s === "loading") return nvLoadMsg();
     if (s === "ready") {
       const r = nvAlive().filter(h => h.state === "ready").length, sp = nvSpeed();
@@ -3482,15 +4017,26 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     return "It starts downloading when you tap a voice or press play.";
   }
   function nvRenderState() { const el = $("nvState"); el.textContent = nvStateText(); el.classList.toggle("err", !!nv.failed); }
+  // v28: 28 voices in four groups; tap a name to choose it (and hear it), or Listen to hear one without choosing it.
+  const NV_GROUPS = [["af", "American women"], ["am", "American men"], ["bf", "British women"], ["bm", "British men"]];
   function renderNvVoices() {
     const box = $("nvList"), cur = nvVoiceId();
     box.innerHTML = "";
-    for (const [id, name, desc] of KOKORO.VOICES) {
-      const b = document.createElement("button");
-      b.className = "row"; b.setAttribute("role", "radio"); b.dataset.nv = id; b.setAttribute("aria-checked", String(id === cur));
-      b.innerHTML = '<span class="grow"><span class="nm"></span><small></small></span><span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>';
-      b.querySelector(".nm").textContent = name; b.querySelector("small").textContent = desc;
-      box.appendChild(b);
+    for (const [pre, label] of NV_GROUPS) {
+      const h = document.createElement("p"); h.className = "vlabel"; h.textContent = label; box.appendChild(h);
+      const g = document.createElement("div"); g.className = "group";
+      for (const [id, name, desc, grade] of KOKORO.VOICES.filter(v => v[0].startsWith(pre + "_"))) {
+        const row = document.createElement("div");
+        row.className = "row vrow";
+        row.innerHTML = '<button class="pick" role="radio"><span class="grow"><span class="nm"></span><small></small></span><span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span></button><button class="pbtn">Listen</button>';
+        const b = row.querySelector(".pick"), l = row.querySelector(".pbtn"), feel = desc.replace(/\s*(American|British) (woman|man)$/, "");
+        b.dataset.nv = id; b.setAttribute("aria-checked", String(id === cur));
+        b.querySelector(".nm").textContent = name;
+        b.querySelector("small").textContent = (feel ? feel + " · " : "") + `grade ${grade}` + (id === "af_heart" ? " · the default" : "");
+        l.dataset.listen = id; l.setAttribute("aria-label", `Listen to ${name}`);
+        g.appendChild(row);
+      }
+      box.appendChild(g);
     }
   }
   function renderVoiceSection() {
@@ -3516,7 +4062,15 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     if (wasPlaying) speakFrom(idx);
   });
   $("nvList").addEventListener("click", e => {
-    const b = e.target.closest(".row[data-nv]"); if (!b) return;
+    const lb = e.target.closest("[data-listen]");
+    if (lb) {
+      // A short sample in that voice; the chosen voice stays as it is.
+      const id = NV_IDS.has(lb.dataset.listen) ? lb.dataset.listen : nvVoiceId();
+      if (playing) pause(); else hardStop();
+      nvSay(`Hi, I'm ${nvVoiceName(id)}. This is how I sound.`, id);
+      return;
+    }
+    const b = e.target.closest(".pick[data-nv]"); if (!b) return;
     settings.nvVoice = b.dataset.nv; saveSettings(); partsCache.clear();
     renderNvVoices(); renderCast(); nvRenderPrepRow(true);
     if (playing) { speakFrom(idx); return; }
@@ -3669,6 +4223,54 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   }
 
   // =====================================================================
+  // v28: offline copy (service worker sw.js + manifest.webmanifest), only on the website copy of the app: a normal
+  // top-level https page. Never inside claude.ai's frame (service workers aren't allowed there); every call is
+  // guarded, so a refusal only means "no offline copy". The page itself is fetched network-first by sw.js, so a
+  // new version arrives at the next visit; when a new sw.js is installed, the status line offers
+  // "Update ready — tap to reload".
+  // =====================================================================
+  function swAllowedFor(o) {
+    return !!o.sw && !o.inFrame && !!o.secure && !/(^|\.)claude\.ai$|claudeusercontent\.com$|(^|\.)anthropic\.com$/i.test(String(o.host || ""));
+  }
+  let SW_OK = false;
+  try { SW_OK = swAllowedFor({ sw: "serviceWorker" in navigator, inFrame: IN_FRAME, secure: window.isSecureContext, host: location.hostname }); } catch { SW_OK = false; }
+  let swReload = false;
+  // Ask the offline copy to keep these files (it skips any it already has). Files fetched inside background threads
+  // may not pass through the service worker (unverified, browser-dependent), so they are named here.
+  function swWarm(urls) {
+    if (!SW_OK) return;
+    try { navigator.serviceWorker.ready.then(reg => { if (reg && reg.active) reg.active.postMessage({ cmd: "warm", urls }); }).catch(() => {}); } catch {}
+  }
+  function swOffer(w) {
+    if (!w) return;
+    setStatus("Update ready —", false, { label: "tap to reload", fn: () => {
+      swReload = true;
+      try { w.postMessage({ cmd: "skipWaiting" }); } catch {}
+      setTimeout(() => { if (swReload) location.reload(); }, 3000); // in case the switch-over isn't reported
+    } });
+  }
+  if (SW_OK) {
+    try {
+      if (!document.querySelector('link[rel="manifest"]')) {
+        const l = document.createElement("link"); l.rel = "manifest"; l.href = "manifest.webmanifest"; document.head.appendChild(l);
+      }
+    } catch {}
+    try {
+      navigator.serviceWorker.addEventListener("controllerchange", () => { if (swReload) { swReload = false; location.reload(); } });
+      navigator.serviceWorker.register("sw.js").then(reg => {
+        if (reg.waiting && navigator.serviceWorker.controller) swOffer(reg.waiting);
+        reg.addEventListener("updatefound", () => {
+          const w = reg.installing;
+          if (w) w.addEventListener("statechange", () => { if (w.state === "installed" && navigator.serviceWorker.controller) swOffer(w); });
+        });
+        document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { try { reg.update().catch(() => {}); } catch {} } });
+        // The PDF reader was loaded before the offline copy existed on a first visit: keep it too.
+        swWarm(["https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js", "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"]);
+      }, e => console.warn("offline copy not set up:", e));
+    } catch (e) { console.warn("offline copy not set up:", e); }
+  }
+
+  // =====================================================================
   // Start: reopen the last reading. Since v16 it comes from the Library ("ldr:current"). v15 and earlier kept
   // it in localStorage as "ldr:lastdoc"; that copy is moved into the Library once and then removed.
   // (This runs after the natural voice section, because hardStop() and the settings use it.)
@@ -3732,7 +4334,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
   function runVoiceTest() {
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
-    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 27</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 28</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
     document.body.appendChild(box);
     const now = box.querySelector("#vtNow"), list = box.querySelector("#vtLog"), end = box.querySelector("#vtEnd");
     const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
@@ -3861,12 +4463,12 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
     (async () => {
       try {
         const keys = [...new URLSearchParams(location.search).keys()];
-        log(`Long Drive Reader file check · version 27 · ${new Date().toLocaleString()}`);
+        log(`Long Drive Reader file check · version 28 · ${new Date().toLocaleString()}`);
         log(`page path: ${location.pathname} · address query: ${keys.length ? keys.join(", ") : "none"} · cookies allowed: ${navigator.cookieEnabled} · readable cookies: ${document.cookie ? document.cookie.split(";").length : 0}`);
         log(`isolated=${self.crossOriginIsolated} · SharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"} · cores=${navigator.hardwareConcurrency} · memory≈${navigator.deviceMemory || "?"} GB`);
         log(`browser: ${navigator.userAgent}`);
         log("");
-        const files = ["kokoro/config.json", "kokoro/tokenizer.json", "kokoro/voices/af_heart.wasm", "kokoro/model.part0.wasm", "kokoro/ort.part0.wasm", "tess/eng.traineddata.wasm"];
+        const files = ["kokoro/config.json", "kokoro/tokenizer.json", "kokoro/voices/af_heart.wasm", "kokoro/voices/am_adam.wasm", "kokoro/model.part0.wasm", "kokoro/ort.part0.wasm", "tess/eng.traineddata.wasm"];
         const urls = files.map(f => new URL(f, document.baseURI).href);
         const page = []; for (const u of urls) page.push(await probe(u));
         const classic = await inWorker(urls), mod = await inWorker(urls, "module");
@@ -3903,6 +4505,7 @@ textarea#pasteText { width: 100%; min-height: 170px; resize: vertical; border: 1
       try {
         unitChecks(log);
         log(nvLabLine());
+        log(`offline copy: ${SW_OK ? "allowed on this page (service worker " + (navigator.serviceWorker.controller ? "in control" : "not in control yet") + ")" : "not used here (inside a frame, not https, or claude.ai)"}`);
         log("wasm: " + (typeof WebAssembly === "object"));
         const r = await fetch(testUrl); log(`fetch ${testUrl}: ` + r.status);
         if (!r.ok) return;

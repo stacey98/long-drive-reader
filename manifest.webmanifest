@@ -1,0 +1,13 @@
+{
+  "name": "Long Drive Reader",
+  "short_name": "Long Drive",
+  "description": "Reads PDFs, books and documents aloud, for listening in the car.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
+  "icons": [
+    { "src": "icon/long-drive-reader-icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ]
+}
