@@ -347,7 +347,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       <h3>Use it like an app</h3>
       <p class="note">In Safari, tap the Share button, then Add to Home Screen. It opens straight to your last document, at the sentence where you stopped. For a proper icon instead of a blank one: save the Long Drive Reader icon to Photos, then in the Shortcuts app make a shortcut with the action "Open URLs" and this page's link, choose Add to Home Screen, and pick the icon from Photos.</p>
       <p class="note">On the website copy of this app (not inside claude.ai), the app keeps a copy of itself on the phone after a visit online, so it can open with no signal. Your Library readings are on the phone anyway.</p>
-      <p class="note">Version 36 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
+      <p class="note">Version 37 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
     </div>
   </div>
 </section>
@@ -4496,7 +4496,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function runVoiceTest(gpuOnly) {
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
-    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 36</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 2–6 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 37</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 2–6 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
     document.body.appendChild(box);
     const now = box.querySelector("#vtNow"), list = box.querySelector("#vtLog"), end = box.querySelector("#vtEnd");
     const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
@@ -4675,9 +4675,93 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       } finally { if (w) setTimeout(() => w.stop(), 60000); }
     })();
   }
+  // v37 (2026-11-14) · #sttest: a different natural voice, Supertonic 2 (Supertone Inc.; sample code MIT, model
+  // BigScience OpenRAIL-M, loaded from huggingface.co/Supertone/supertonic-2, 263 MB). It reads plain text (no
+  // words-to-sounds step) and is much lighter to run: in laptop Chrome, 1 core, it made speech 3.6× / 2.9× / 2.1× real
+  // time with 2 / 4 / 8 quality steps, where Kokoro makes 0.43× on the same core. Test only: it isn't used for
+  // reading yet. She listens and the phone's speed is measured; a reload during the test is reported, not repeated.
+  function runSupertonicTest() {
+    const box = document.createElement("div");
+    box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Supertonic voice test · version 37</h2><p style="margin:0 0 14px;color:var(--muted)">A different natural voice. Keep this screen on (on Wi-Fi: it downloads 263 MB once). Then tap the buttons to listen, and send Claude a screenshot.</p><div id="stNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="stLog" style="margin:0;padding-left:22px"></ol><div id="stBtns" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px"></div><p id="stEnd" style="font-weight:600"></p>';
+    document.body.appendChild(box);
+    const now = box.querySelector("#stNow"), list = box.querySelector("#stLog"), btns = box.querySelector("#stBtns");
+    const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
+    const KEY = "ldr:sttest";
+    let last = null; try { last = JSON.parse(localStorage.getItem(KEY) || "null"); } catch {}
+    let stage = "starting", st = performance.now(), done = false;
+    const tick = setInterval(() => {
+      if (done) return;
+      now.textContent = `Now: ${stage} · ${((performance.now() - st) / 1000).toFixed(0)} s`;
+      try { localStorage.setItem(KEY, JSON.stringify({ stage, done: false })); } catch {}
+    }, 500);
+    const finish = msg => { done = true; clearInterval(tick); now.textContent = msg; box.querySelector("#stEnd").textContent = "Done. Listen with the buttons, then send Claude a screenshot."; try { localStorage.setItem(KEY, JSON.stringify({ stage, done: true })); } catch {} };
+    add(`Phone: ${navigator.hardwareConcurrency || "?"} cores · ${(navigator.userAgent.match(/OS [\d_]+|Version\/[\d.]+|Chrome\/\d+/g) || []).join(" · ")}`);
+    if (last && !last.done) { add(`Last time the page reloaded by itself during: ${last.stage} (most likely Safari ran out of memory). Not trying again.`); finish("Stopped: not enough memory for this voice last time"); return; }
+    const SRC = `
+      const HF = "https://huggingface.co/Supertone/supertonic-2/resolve/main/";
+      let ready = null;
+      function load() {
+        if (!ready) ready = (async () => {
+          const H = await import(${JSON.stringify(new URL("supertonic/st-helper.mjs", document.baseURI).href)});
+          H.ort.env.wasm.numThreads = 1;
+          H.ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+          const { textToSpeech } = await H.loadTextToSpeech(HF + "onnx", { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
+          const styles = {};
+          return { H, tts: textToSpeech, styles };
+        })();
+        return ready;
+      }
+      self.onmessage = async e => {
+        const { id, text, steps, voice } = e.data;
+        try {
+          const m = await load();
+          if (!text) { self.postMessage({ id, ok: true }); return; }
+          if (!m.styles[voice]) m.styles[voice] = await m.H.loadVoiceStyle([HF + "voice_styles/" + voice + ".json"]);
+          const r = await m.tts.call(text, "en", m.styles[voice], steps, 1.05);
+          const a = Float32Array.from(r.wav);
+          self.postMessage({ id, audio: a, sr: m.tts.sampleRate }, [a.buffer]);
+        } catch (err) { self.postMessage({ id, error: String(err && err.message || err) }); }
+      };`;
+    let w = null;
+    const calls = new Map(); let n = 0;
+    const call = msg => new Promise((res, rej) => { const id = ++n; calls.set(id, { res, rej }); w.postMessage(Object.assign({ id }, msg)); });
+    const hear = (label, a, sr) => {
+      const b = document.createElement("button"); b.className = "pbtn"; b.textContent = label;
+      const url = URL.createObjectURL(nvWavBlob(nvToPcm([a], 0), sr, 0));
+      b.onclick = () => { const au = new Audio(url); au.play().catch(() => {}); };
+      btns.appendChild(b);
+    };
+    const LONG = "When the two companies first met in 2019, neither side wanted to name a price, so they spent most of the morning talking about the market, the timeline, and the $4.5 million fee.";
+    (async () => {
+      try {
+        w = new Worker(URL.createObjectURL(new Blob([SRC], { type: "text/javascript" })), { type: "module" });
+        w.onmessage = e => { const d = e.data, p = calls.get(d.id); if (!p) return; calls.delete(d.id); d.error ? p.rej(new Error(d.error)) : p.res(d); };
+        w.onerror = e => { for (const p of calls.values()) p.rej(new Error(e.message || "helper crashed")); calls.clear(); };
+        stage = "downloading the voice (263 MB, once) and starting it"; st = performance.now();
+        const t0 = performance.now(); await call({}); add(`Voice ready after ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+        stage = "warming up"; st = performance.now(); await call({ text: "Hello.", steps: 2, voice: "F1" });
+        let best = 0;
+        for (const steps of [2, 4, 8]) {
+          stage = `making the long sentence with ${steps} quality steps`; st = performance.now();
+          const t = performance.now(), r = await call({ text: LONG, steps, voice: "F1" });
+          const dur = r.audio.length / r.sr, x = dur / ((performance.now() - t) / 1000);
+          if (steps === 4) best = x;
+          add(`${steps} steps: ${dur.toFixed(1)} s of speech made in ${((performance.now() - t) / 1000).toFixed(1)} s → ${x.toFixed(2)}× real time`);
+          hear(`Hear woman, ${steps} steps`, r.audio, r.sr);
+        }
+        stage = "a man's voice (4 steps)"; st = performance.now();
+        const m1 = await call({ text: LONG, steps: 4, voice: "M1" }); hear("Hear man, 4 steps", m1.audio, m1.sr);
+        add(best >= 2.2 ? `With 4 steps: fast enough for 2× live on one core (${best.toFixed(1)}×). Our current voice: 0.48× on this phone.`
+          : best >= 1.1 ? `With 4 steps: live up to about ${Math.floor(best / 1.05 * 4) / 4}×. Our current voice: 0.48× on this phone.` : `With 4 steps: ${best.toFixed(2)}× real time.`);
+        finish(`Finished · Supertonic ${best.toFixed(2)}× real time (4 steps, 1 core)`);
+      } catch (e) { add(`Stopped while ${stage}: ${nvWhy(e)}`); finish(`Stopped while ${stage}`); }
+    })();
+  }
   const voiceLabW = () => {
     if (location.hash === "#voicetest") { runVoiceTest(); return; }
     if (location.hash === "#gputest") { runVoiceTest(true); return; }
+    if (location.hash === "#sttest") { runSupertonicTest(); return; }
     const m = /^#voicelabw(\d)$/.exec(location.hash); if (m) runVoiceLabWorkers(Number(m[1]));
   };
   window.addEventListener("hashchange", voiceLabW);
@@ -4747,7 +4831,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     (async () => {
       try {
         const keys = [...new URLSearchParams(location.search).keys()];
-        log(`Long Drive Reader file check · version 36 · ${new Date().toLocaleString()}`);
+        log(`Long Drive Reader file check · version 37 · ${new Date().toLocaleString()}`);
         log(`page path: ${location.pathname} · address query: ${keys.length ? keys.join(", ") : "none"} · cookies allowed: ${navigator.cookieEnabled} · readable cookies: ${document.cookie ? document.cookie.split(";").length : 0}`);
         log(`isolated=${self.crossOriginIsolated} · SharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"} · cores=${navigator.hardwareConcurrency} · memory≈${navigator.deviceMemory || "?"} GB`);
         log(`browser: ${navigator.userAgent}`);
