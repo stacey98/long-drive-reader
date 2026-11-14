@@ -321,7 +321,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       <h3>Use it like an app</h3>
       <p class="note">In Safari, tap the Share button, then Add to Home Screen. It opens straight to your last document, at the sentence where you stopped. For a proper icon instead of a blank one: save the Long Drive Reader icon to Photos, then in the Shortcuts app make a shortcut with the action "Open URLs" and this page's link, choose Add to Home Screen, and pick the icon from Photos.</p>
       <p class="note">On the website copy of this app (not inside claude.ai), the app keeps a copy of itself on the phone after a visit online, so it can open with no signal. Your Library readings are on the phone anyway.</p>
-      <p class="note">Version 31 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
+      <p class="note">Version 32 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
     </div>
   </div>
 </section>
@@ -3287,10 +3287,23 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       ["af_sky", "Sky", "American woman", "C-"], ["am_echo", "Echo", "American man", "D"], ["am_eric", "Eric", "American man", "D"],
       ["am_liam", "Liam", "American man", "D"], ["am_onyx", "Onyx", "American man", "D"]
     ];
+    // v32 (2026-11-14): "words to sounds" (turning text into the sound codes the model reads). kokoro-js does this
+    // with espeak-ng compiled to WebAssembly. Her iPhone's v31 test proved that this step never finishes in Safari
+    // (tests A and B, the model alone, worked: 7.4 s of speech in 14.1 s; test C, with espeak, stuck for over 4 min).
+    // On Apple's browser engine (every iPhone/iPad browser, and Safari on a Mac) the app now uses a plain JavaScript
+    // version instead: kokoro/g2p/say.mjs (numbers said as words, then the MIT "phonemize" 2.0.1 dictionary and
+    // rules, rewritten in the style kokoro-js gives the model). Elsewhere espeak-ng stays, as before.
+    // "?sounds=js" in the address forces the JavaScript version (for testing on a laptop).
+    const ua = navigator.userAgent;
+    const SOUNDS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ||
+      (/AppleWebKit/.test(ua) && /Safari\//.test(ua) && !/Chrome|Chromium|Edg|OPR|Android/.test(ua)) ||
+      /[?&]sounds=js\b/.test(location.search) ? "js" : "espeak";
     // A helper that runs the model in its own background thread (Web Worker). Several of them speak different
     // sentences at the same time, which is how the natural voice can keep ahead of playback.
     const WORKER_SRC = `
       const base = ${JSON.stringify(base)};
+      const SOUNDS = ${JSON.stringify(SOUNDS)};
+      let g2pP = null;
       const PARTS = { model: [0,1,2,3,4,5,6].map(i => "model.part" + i + ".wasm"), ort: ["ort-plain.wasm"] };
       const of = self.fetch.bind(self), joined = {};
       async function readAll(r) {
@@ -3331,7 +3344,17 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         try {
           const t = await tts();
           if (cmd === "gen") {
-            const a = await t.generate(text, { voice: voice || "af_heart", speed: speed || 1 });
+            let a;
+            if (SOUNDS === "js") {
+              // v32: words to sounds in plain JavaScript (kokoro/g2p/say.mjs), then the model, as kokoro-js's generate() does
+              const g = await (g2pP || (g2pP = import(base + "g2p/say.mjs?v=32")));
+              const ph = g.toKokoro(text);
+              if (!ph) a = { audio: new Float32Array(2400), sampling_rate: 24000 }; // nothing sayable: 0.1 s of silence
+              else {
+                const { input_ids } = t.tokenizer(ph, { truncation: true });
+                a = await t.generate_from_ids(input_ids, { voice: voice || "af_heart", speed: speed || 1 });
+              }
+            } else a = await t.generate(text, { voice: voice || "af_heart", speed: speed || 1 });
             self.postMessage({ id, audio: a.audio, sr: a.sampling_rate }, [a.audio.buffer]);
           } else if (cmd === "ids") {
             // v31 test only: the model with ready-made sound codes, skipping the phonemizer (espeak-ng in WebAssembly)
@@ -3365,7 +3388,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       const call = msg => new Promise((resolve, reject) => { const id = ++n; waiting.set(id, { resolve, reject }); w.postMessage(Object.assign({ id }, msg)); });
       return { ready: () => call({ cmd: "init" }), gen: (text, voice, speed) => call({ cmd: "gen", text, voice, speed }), genIds: (ids, voice) => call({ cmd: "ids", ids, voice }), stop: () => w.terminate() };
     }
-    return { load, VOICES, base, makeWorker };
+    return { load, VOICES, base, makeWorker, SOUNDS };
   })();
 
   // =====================================================================
@@ -3405,7 +3428,10 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   // v28: the voice runtime files the offline copy keeps (website copy only). Not the model and not the voices:
   // transformers.js keeps the model in its own browser cache ("transformers-cache") and kokoro-js keeps every voice
   // it has used in its own cache ("kokoro-voices"), so keeping them again would store them twice (the model is 84 MB).
-  const NV_WARM = ["ort-plain.wasm", "ort-plain.mjs", "config.json", "tokenizer.json", "tokenizer_config.json"]
+  const NV_WARM = ["ort-plain.wasm", "ort-plain.mjs", "config.json", "tokenizer.json", "tokenizer_config.json",
+    // v32: the JavaScript words-to-sounds files (used on iPhone)
+    "g2p/say.mjs?v=32", "g2p/index.mjs", "g2p/core.mjs", "g2p/en-g2p.mjs", "g2p/utils-Bo_ZN3X7.mjs", "g2p/anyascii.mjs",
+    "g2p/en/exceptions.mjs", "g2p/en/initialisms.mjs", "g2p/en/homographs.mjs", "g2p/en/compound-parts.mjs"]
     .map(f => KOKORO.base + f).concat("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js");
   const nvVoiceId = () => KOKORO.VOICES.slice(0, 5).some(v => v[0] === settings.nvVoice) ? settings.nvVoice : "af_heart"; // v30: one of the 5 offered
   const nvVoiceRow = id => KOKORO.VOICES.find(v => v[0] === id) || KOKORO.VOICES[0];
@@ -4356,7 +4382,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function runVoiceTest() {
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
-    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 31</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 32</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
     document.body.appendChild(box);
     const now = box.querySelector("#vtNow"), list = box.querySelector("#vtLog"), end = box.querySelector("#vtEnd");
     const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
@@ -4401,24 +4427,41 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         const tb = performance.now(), m2 = await w.genIds(IDS2, "af_heart");
         const spM = (m2.audio.length / m2.sr) / ((performance.now() - tb) / 1000);
         add(`B. Model alone, long sentence: ${(m2.audio.length / m2.sr).toFixed(1)} s of speech made in ${sec(tb)} s → ${spM.toFixed(2)}× real time`);
-        stage = "test C: words to sounds + model (what the app does) — if this sticks, the words-to-sounds step is the problem"; st = performance.now();
+        // v32: C and D go through the app's own path. On iPhone that is now the JavaScript words-to-sounds step.
+        const how = KOKORO.SOUNDS === "js" ? "new words-to-sounds (JavaScript)" : "words-to-sounds (espeak)";
+        stage = `test C: ${how} + model, short sentence`; st = performance.now();
         const a = await w.gen("Hello, this is a quick test.", "af_heart", 1);
         const d1 = a.audio.length / a.sr;
-        add(`C. Words to sounds + model, short sentence: ${d1.toFixed(1)} s of speech made in ${sec(st)} s`);
-        stage = "test D: words to sounds + model, long sentence"; st = performance.now();
+        add(`C. ${how[0].toUpperCase() + how.slice(1)} + model, short sentence: ${d1.toFixed(1)} s of speech made in ${sec(st)} s`);
+        stage = `test D: ${how} + model, long sentence`; st = performance.now();
         const t2 = performance.now();
-        const b = await w.gen("When the two companies first met, neither side wanted to name a price, so they spent most of the morning talking about the market, the timeline, and the people who would run the business afterwards.", "af_heart", 1);
+        const b = await w.gen("When the two companies first met in 2019, neither side wanted to name a price, so they spent most of the morning talking about the market, the timeline, and the $4.5 million fee.", "af_heart", 1);
         const took = (performance.now() - t2) / 1000, d2 = b.audio.length / b.sr, sp = d2 / took, r = settings.rate;
-        add(`D. Words to sounds + model, long sentence: ${d2.toFixed(1)} s of speech made in ${took.toFixed(1)} s → ${sp.toFixed(2)}× real time`);
-        let verdict;
-        if (sp >= r * 1.1) verdict = `With one helper: fast enough to read live at ${r}× speed.`;
-        else verdict = `With one helper (what the app uses on iPhone): too slow to read live at ${r}× speed (it would need ${r}× or more). Prepare whole reading would take about ${Math.round(30 / sp)} min for 30 min of listening (at 1×).`;
-        add(verdict);
+        add(`D. Same, long sentence: ${d2.toFixed(1)} s of speech made in ${took.toFixed(1)} s → ${sp.toFixed(2)}× real time`);
         const btn = document.createElement("button");
         btn.textContent = "Hear the long sentence"; btn.className = "pbtn"; btn.style.marginTop = "8px";
         const url = URL.createObjectURL(nvWavBlob(nvToPcm([b.audio], 0), b.sr, 0));
         btn.onclick = () => { const au = new Audio(url); au.play().catch(() => {}); };
         box.appendChild(btn);
+        // E: a second helper at the same time (the app uses one on iPhone). Shows whether two together would keep up.
+        let sp2 = 0;
+        if (NV_IOS) {
+          stage = "test E: two helpers at the same time (a crash here is useful to know too)"; st = performance.now();
+          let w2 = null;
+          try {
+            w2 = KOKORO.makeWorker({ onDead: () => {} });
+            await w2.ready();
+            const te = performance.now();
+            const both = await Promise.all([w.genIds(IDS2, "af_heart"), w2.genIds(IDS2, "af_heart")]);
+            const spoken = both.reduce((s, x) => s + x.audio.length / x.sr, 0);
+            sp2 = spoken / ((performance.now() - te) / 1000);
+            add(`E. Two helpers together: ${spoken.toFixed(1)} s of speech made in ${sec(te)} s → ${sp2.toFixed(2)}× real time`);
+          } catch (e2) { add(`E. Two helpers together didn't work: ${nvWhy(e2)}`); }
+          finally { if (w2) w2.stop(); }
+        }
+        const best = Math.max(sp, sp2);
+        add(best >= r * 1.1 ? `Fast enough to read live at ${r}× speed${sp2 > sp * 1.1 ? " with two helpers" : ""}.`
+          : `Too slow to read live at ${r}× speed. "Prepare whole reading" would take about ${Math.round(30 / sp)} min for 30 min of listening (at 1×); start it at home, then listen.`);
         finish(`Finished · ${sp.toFixed(2)}× real time`);
       } catch (e) {
         add(`Stopped while ${stage} (after ${sec(st)} s): ${nvWhy(e)}`);
@@ -4497,12 +4540,12 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     (async () => {
       try {
         const keys = [...new URLSearchParams(location.search).keys()];
-        log(`Long Drive Reader file check · version 31 · ${new Date().toLocaleString()}`);
+        log(`Long Drive Reader file check · version 32 · ${new Date().toLocaleString()}`);
         log(`page path: ${location.pathname} · address query: ${keys.length ? keys.join(", ") : "none"} · cookies allowed: ${navigator.cookieEnabled} · readable cookies: ${document.cookie ? document.cookie.split(";").length : 0}`);
         log(`isolated=${self.crossOriginIsolated} · SharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"} · cores=${navigator.hardwareConcurrency} · memory≈${navigator.deviceMemory || "?"} GB`);
         log(`browser: ${navigator.userAgent}`);
         log("");
-        const files = ["kokoro/config.json", "kokoro/tokenizer.json", "kokoro/voices/af_heart.wasm", "kokoro/voices/am_adam.wasm", "kokoro/model.part0.wasm", "kokoro/ort-plain.wasm", "tess/eng.traineddata.wasm"];
+        const files = ["kokoro/config.json", "kokoro/tokenizer.json", "kokoro/voices/af_heart.wasm", "kokoro/voices/am_adam.wasm", "kokoro/model.part0.wasm", "kokoro/ort-plain.wasm", "kokoro/g2p/say.mjs", "kokoro/g2p/en/exceptions.mjs", "tess/eng.traineddata.wasm"];
         const urls = files.map(f => new URL(f, document.baseURI).href);
         const page = []; for (const u of urls) page.push(await probe(u));
         const classic = await inWorker(urls), mod = await inWorker(urls, "module");
