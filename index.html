@@ -3392,7 +3392,11 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
           // v34: kokoro-js 1.2.1 from kokoro/kokoro-web.mjs (the same file as on jsdelivr, plus one export, "tenv",
           // so the number of threads can be set). OPTS.gpu = the phone's graphics chip (WebGPU) with the full-size
           // model from huggingface.co (326 MB, the one kokoro-js names for WebGPU) and the runtime build that has WebGPU.
-          const mod = await import(base + "kokoro-web.mjs");
+          // (The claude.ai copy can't publish this file — it contains a character the artifact host refuses — so
+          // there the helper falls back to the same file on jsdelivr, without the thread setting.)
+          let mod;
+          try { mod = await import(base + "kokoro-web.mjs"); }
+          catch (err) { mod = await import("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js"); }
           if (OPTS.gpu && !(self.navigator && self.navigator.gpu)) throw new Error("this browser has no WebGPU in a helper");
           mod.env.wasmPaths = OPTS.gpu ? { mjs: base + "ort-wasm-simd-threaded.jsep.mjs", wasm: base + "ort-jsep.wasm" } : { mjs: base + "ort-plain.mjs", wasm: base + "ort-plain.wasm" };
           if (mod.tenv && OPTS.threads) mod.tenv.backends.onnx.wasm.numThreads = OPTS.threads;
@@ -3498,7 +3502,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     // v32: the JavaScript words-to-sounds files (used on iPhone)
     "g2p/say.mjs?v=32", "g2p/index.mjs", "g2p/core.mjs", "g2p/en-g2p.mjs", "g2p/utils-Bo_ZN3X7.mjs", "g2p/anyascii.mjs",
     "g2p/en/exceptions.mjs", "g2p/en/initialisms.mjs", "g2p/en/homographs.mjs", "g2p/en/compound-parts.mjs"]
-    .map(f => KOKORO.base + f).concat(KOKORO.base + "kokoro-web.mjs"); // v34: the helpers load kokoro-js from here
+    .map(f => KOKORO.base + f).concat(KOKORO.base + "kokoro-web.mjs", "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js"); // v34: the helpers load kokoro-js from here (or jsdelivr)
   const nvVoiceId = () => KOKORO.VOICES.slice(0, 5).some(v => v[0] === settings.nvVoice) ? settings.nvVoice : "af_heart"; // v30: one of the 5 offered
   const nvVoiceRow = id => KOKORO.VOICES.find(v => v[0] === id) || KOKORO.VOICES[0];
   const nvVoiceName = id => nvVoiceRow(id)[1];
