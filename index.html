@@ -321,7 +321,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       <h3>Use it like an app</h3>
       <p class="note">In Safari, tap the Share button, then Add to Home Screen. It opens straight to your last document, at the sentence where you stopped. For a proper icon instead of a blank one: save the Long Drive Reader icon to Photos, then in the Shortcuts app make a shortcut with the action "Open URLs" and this page's link, choose Add to Home Screen, and pick the icon from Photos.</p>
       <p class="note">On the website copy of this app (not inside claude.ai), the app keeps a copy of itself on the phone after a visit online, so it can open with no signal. Your Library readings are on the phone anyway.</p>
-      <p class="note">Version 28 · 13 Nov 2026. If this says an older number, tap Safari's reload button.</p>
+      <p class="note">Version 29 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
     </div>
   </div>
 </section>
@@ -3214,8 +3214,17 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const base = new URL("kokoro/", document.baseURI).href;
     const PARTS = {
       model: [0, 1, 2, 3, 4, 5, 6].map(i => `model.part${i}.wasm`),
-      ort: [0, 1].map(i => `ort.part${i}.wasm`)
+      ort: ["ort-plain.wasm"] // v29: the plain (non-JSEP) runtime, see ORT_PATHS
     };
+    // v29 (2026-11-14): kokoro-js's bundled ONNX Runtime (1.22.0-dev.20250409) loads its "JSEP" build
+    // (ort-wasm-simd-threaded.jsep.*). On iOS/Safari 26.2+ that build sends Safari's WebAssembly compiler into a
+    // runaway (CPU and memory climb, the page or helper dies or hangs): onnxruntime issue #26827, WebKit bug 304810.
+    // The same reports say the plain (non-JSEP) build of the same runtime works. Her iPhone (Safari 26.6) got the
+    // voice loaded in 9 s and then never finished a one-word sentence (388 s), which fits. So the app now loads the
+    // plain build of exactly the same version (from the onnxruntime-web npm package, dist/ort-wasm-simd-threaded.*),
+    // published as kokoro/ort-plain.mjs + kokoro/ort-plain.wasm (11 MB instead of 22 MB). Whether it fixes her
+    // iPhone is unverified until she tries it.
+    const ORT_PATHS = { mjs: base + "ort-plain.mjs", wasm: base + "ort-plain.wasm" };
     const joined = new Map();
     function join(kind, onBytes) {
       if (!joined.has(kind)) joined.set(kind, (async () => {
@@ -3234,7 +3243,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     function route(url) {
       const u = String(url && url.url || url);
       if (/model_quantized\.onnx/.test(u)) return { kind: "model", type: "application/octet-stream" };
-      if (/ort-wasm-simd-threaded\.jsep\.wasm/.test(u)) return { kind: "ort", type: "application/wasm" };
+      if (/ort-plain.wasm|ort-wasm-simd-threaded.jsep.wasm/.test(u)) return { kind: "ort", type: "application/wasm" };
       let m = /Kokoro-82M-v1\.0-ONNX\/resolve\/main\/(config\.json|tokenizer\.json|tokenizer_config\.json)/.exec(u);
       if (m) return { file: m[1] };
       m = /Kokoro-82M-v1\.0-ONNX\/resolve\/main\/voices\/([a-z]{2}_[a-z]+)\.bin/.exec(u);
@@ -3258,7 +3267,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       if (!ttsP) ttsP = (async () => {
         install();
         const mod = await import("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js");
-        mod.env.wasmPaths = base; // ORT loads kokoro/ort-wasm-simd-threaded.jsep.mjs; its .wasm fetch is routed above
+        mod.env.wasmPaths = ORT_PATHS; // v29: plain runtime (kokoro/ort-plain.mjs + .wasm); its .wasm fetch is routed above
         return mod.KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", { dtype: "q8", device: device || "wasm" });
       })();
       ttsP.catch(() => { ttsP = null; });
@@ -3283,7 +3292,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     // sentences at the same time, which is how the natural voice can keep ahead of playback.
     const WORKER_SRC = `
       const base = ${JSON.stringify(base)};
-      const PARTS = { model: [0,1,2,3,4,5,6].map(i => "model.part" + i + ".wasm"), ort: [0,1].map(i => "ort.part" + i + ".wasm") };
+      const PARTS = { model: [0,1,2,3,4,5,6].map(i => "model.part" + i + ".wasm"), ort: ["ort-plain.wasm"] };
       const of = self.fetch.bind(self), joined = {};
       async function readAll(r) {
         if (!r.body || !r.body.getReader) { const b = await r.arrayBuffer(); self.postMessage({ progress: b.byteLength }); return b; }
@@ -3304,7 +3313,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       self.fetch = async (input, init) => {
         const u = String(input && input.url || input); let m;
         if (/model_quantized\\.onnx/.test(u)) return new Response(await join("model"), { headers: { "Content-Type": "application/octet-stream" } });
-        if (/ort-wasm-simd-threaded\\.jsep\\.wasm/.test(u)) return new Response(await join("ort"), { headers: { "Content-Type": "application/wasm" } });
+        if (/ort-plain\\.wasm|ort-wasm-simd-threaded\\.jsep\\.wasm/.test(u)) return new Response(await join("ort"), { headers: { "Content-Type": "application/wasm" } });
         if ((m = /Kokoro-82M-v1\\.0-ONNX\\/resolve\\/main\\/(config\\.json|tokenizer\\.json|tokenizer_config\\.json)/.exec(u))) return of(base + m[1]);
         if ((m = /Kokoro-82M-v1\\.0-ONNX\\/resolve\\/main\\/voices\\/([a-z]{2}_[a-z]+)\\.bin/.exec(u))) return of(base + "voices/" + m[1] + ".wasm");
         return of(input, init);
@@ -3313,7 +3322,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       function tts() {
         if (!ttsP) ttsP = (async () => {
           const mod = await import("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js");
-          mod.env.wasmPaths = base;
+          mod.env.wasmPaths = { mjs: base + "ort-plain.mjs", wasm: base + "ort-plain.wasm" };
           return mod.KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", { dtype: "q8", device: "wasm" });
         })();
         return ttsP;
@@ -3368,7 +3377,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   //    audio first and only starts the helpers when something is missing.
   // =====================================================================
   const NV_TARGET = 90, NV_CAP = 900, NV_WPS = 2.6; // seconds ahead wanted, most seconds ahead in memory, spoken words per second (estimate)
-  const NV_ORT_BYTES = 14e6 + 7596019, NV_BYTES = 6 * 14e6 + 8361116 + NV_ORT_BYTES; // model.part0-6 + ort.part0-1 as published under kokoro/
+  const NV_ORT_BYTES = 11133407, NV_BYTES = 6 * 14e6 + 8361116 + NV_ORT_BYTES; // model.part0-6 + ort-plain.wasm as published under kokoro/
   const NV_IDS = new Set(KOKORO.VOICES.map(v => v[0]));
   const NV_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   const NV_MAX = Math.max(1, Math.min(6, Math.floor((navigator.hardwareConcurrency || 2) / 2)));
@@ -3391,7 +3400,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   // v28: the voice runtime files the offline copy keeps (website copy only). Not the model and not the voices:
   // transformers.js keeps the model in its own browser cache ("transformers-cache") and kokoro-js keeps every voice
   // it has used in its own cache ("kokoro-voices"), so keeping them again would store them twice (the model is 84 MB).
-  const NV_WARM = ["ort.part0.wasm", "ort.part1.wasm", "ort-wasm-simd-threaded.jsep.mjs", "config.json", "tokenizer.json", "tokenizer_config.json"]
+  const NV_WARM = ["ort-plain.wasm", "ort-plain.mjs", "config.json", "tokenizer.json", "tokenizer_config.json"]
     .map(f => KOKORO.base + f).concat("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js");
   const nvVoiceId = () => NV_IDS.has(settings.nvVoice) ? settings.nvVoice : "af_heart";
   const nvVoiceRow = id => KOKORO.VOICES.find(v => v[0] === id) || KOKORO.VOICES[0];
@@ -4334,7 +4343,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function runVoiceTest() {
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
-    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 28</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 29</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
     document.body.appendChild(box);
     const now = box.querySelector("#vtNow"), list = box.querySelector("#vtLog"), end = box.querySelector("#vtEnd");
     const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
@@ -4463,12 +4472,12 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     (async () => {
       try {
         const keys = [...new URLSearchParams(location.search).keys()];
-        log(`Long Drive Reader file check · version 28 · ${new Date().toLocaleString()}`);
+        log(`Long Drive Reader file check · version 29 · ${new Date().toLocaleString()}`);
         log(`page path: ${location.pathname} · address query: ${keys.length ? keys.join(", ") : "none"} · cookies allowed: ${navigator.cookieEnabled} · readable cookies: ${document.cookie ? document.cookie.split(";").length : 0}`);
         log(`isolated=${self.crossOriginIsolated} · SharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"} · cores=${navigator.hardwareConcurrency} · memory≈${navigator.deviceMemory || "?"} GB`);
         log(`browser: ${navigator.userAgent}`);
         log("");
-        const files = ["kokoro/config.json", "kokoro/tokenizer.json", "kokoro/voices/af_heart.wasm", "kokoro/voices/am_adam.wasm", "kokoro/model.part0.wasm", "kokoro/ort.part0.wasm", "tess/eng.traineddata.wasm"];
+        const files = ["kokoro/config.json", "kokoro/tokenizer.json", "kokoro/voices/af_heart.wasm", "kokoro/voices/am_adam.wasm", "kokoro/model.part0.wasm", "kokoro/ort-plain.wasm", "tess/eng.traineddata.wasm"];
         const urls = files.map(f => new URL(f, document.baseURI).href);
         const page = []; for (const u of urls) page.push(await probe(u));
         const classic = await inWorker(urls), mod = await inWorker(urls, "module");
