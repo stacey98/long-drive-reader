@@ -321,7 +321,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       <h3>Use it like an app</h3>
       <p class="note">In Safari, tap the Share button, then Add to Home Screen. It opens straight to your last document, at the sentence where you stopped. For a proper icon instead of a blank one: save the Long Drive Reader icon to Photos, then in the Shortcuts app make a shortcut with the action "Open URLs" and this page's link, choose Add to Home Screen, and pick the icon from Photos.</p>
       <p class="note">On the website copy of this app (not inside claude.ai), the app keeps a copy of itself on the phone after a visit online, so it can open with no signal. Your Library readings are on the phone anyway.</p>
-      <p class="note">Version 29 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
+      <p class="note">Version 30 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
     </div>
   </div>
 </section>
@@ -3140,13 +3140,13 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       settings.nvVoice = "af_heart"; settings.nvCast = {}; settings.sayNames = null;
       const cd = { key: "unit-cast", pages: 1, cast: ["A", "B", "C"], sentences: [] }, cm = nvCastMap(cd);
       eq("natural cast: each gets their own voice, never the narrator's", ["A", "B", "C"].map(n => cm[n].voice + (cm[n].own ? "" : "!")).join(","), "af_bella,af_nicole,am_michael");
-      // v28: 27 voices for characters (28 minus the narrator's), so 10 characters all get their own; 28 share once.
-      const ten = nvCastMap({ key: "unit-cast", cast: "ABCDEFGHIJ".split("") }), many = Array.from({ length: 28 }, (_, k) => "C" + k);
+      // v30: 15 American voices for characters (16 minus the narrator's), so 10 characters all get their own; 16 share once.
+      const ten = nvCastMap({ key: "unit-cast", cast: "ABCDEFGHIJ".split("") }), many = Array.from({ length: 16 }, (_, k) => "C" + k);
       const big = nvCastMap({ key: "unit-cast", cast: many });
-      eq("natural cast: 10 characters each get their own voice; 28 share 27 (first and last)", Object.values(ten).every(c => c.own) && big.C0.voice === big.C27.voice && !big.C0.own && big.C1.own && Object.values(big).every(c => c.voice !== "af_heart"), true);
+      eq("natural cast: 10 characters each get their own voice; 16 share 15 (first and last)", Object.values(ten).every(c => c.own) && big.C0.voice === big.C15.voice && !big.C0.own && big.C1.own && Object.values(big).every(c => c.voice !== "af_heart"), true);
       eq("natural cast: names not read when everyone has a voice", nvSayNames(cd) + "|" + nvSayNames({ key: "unit-cast", cast: many }), "false|true");
-      settings.nvCast = { "unit-cast": { B: "bm_george" } };
-      eq("natural cast: a voice picked by tapping is kept", nvCastMap(cd).B.voice, "bm_george");
+      settings.nvCast = { "unit-cast": { B: "am_puck" } };
+      eq("natural cast: a voice picked by tapping is kept", nvCastMap(cd).B.voice, "am_puck");
       settings.nvCast = {};
       const qd = { key: "unit-q", pages: 1, cast: [], sentences: [{ t: "One is here." }, { t: "Exhibit 1 Sales", skip: "Exhibit 1", run: 1 }, { t: "West 1,200", skip: "Exhibit 1", run: 1 },
         { t: "Two is here." }, { t: "—" }, { t: "Three is here." }] };
@@ -3164,9 +3164,9 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       const fast = nvSimulate({ units: 30, secs: 8, helpers: 2, speed: 0.8, rate: 1.2, target: 90, cap: 900 });
       const slow = nvSimulate({ units: 30, secs: 8, helpers: 1, speed: 0.5, rate: 1.2, target: 90, cap: 900 });
       eq("natural buffer (fake generator): 2 helpers at 0.8× keep up at 1.2×, 1 at 0.5× has to wait", (fast.stall === 0) + "|" + (slow.stall > 30), "true|true");
-      // v28: all 28 English natural voices, grouped; Heart stays the default.
-      eq("natural voices: 28 in 4 groups (11/9/4/4), Heart first, all with a grade", [KOKORO.VOICES.length, ...NV_GROUPS.map(g => KOKORO.VOICES.filter(v => v[0].startsWith(g[0] + "_")).length),
-        KOKORO.VOICES[0][0], KOKORO.VOICES.every(v => /^[A-F][+-]?$/.test(v[3] || "")), new Set(KOKORO.VOICES.map(v => v[0])).size].join(","), "28,11,9,4,4,af_heart,true,28");
+      // v30: 16 American voices (5 offered: 3 women, 2 men); Heart stays the default.
+      eq("natural voices: 16 American, first 5 offered as 3 women and 2 men, Heart first, all with a grade", [KOKORO.VOICES.length, ...NV_GROUPS.map(g => KOKORO.VOICES.slice(0, NV_PICK).filter(v => v[0].startsWith(g[0] + "_")).length),
+        KOKORO.VOICES[0][0], KOKORO.VOICES.every(v => /^[A-F][+-]?$/.test(v[3] || "")), new Set(KOKORO.VOICES.map(v => v[0])).size].join(","), "16,3,2,af_heart,true,16");
       // v28: pronunciation list, whole words, any capitals, phrases; used by the phone voice (speakable) and the natural voice (nvJob).
       settings.pron = [{ from: "Kaiser", to: "Ky-zer" }, { from: "New York Times", to: "the Times" }, { from: "New York", to: "NYC" }];
       eq("pronunciation: whole words, any capitals, phrases, both voices", [applyPron("Kaiser met KAISER in Kaiserslautern."), speakable("Ask Kaiser (Smith, 2004)."),
@@ -3277,16 +3277,15 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     // The order is the order characters in a play get them: the 10 voices of v23–v27 first (so plays with up to 9
     // characters keep the voices they had), then the 18 new ones, best grade first. The grade is the one kokoro-js
     // lists for each voice ("overallGrade", A best … F worst), shown so the better ones are easy to find.
+    // v30 (2026-11-14): she asked for only a few voices and no British ones. The picker shows the first 5
+    // (NV_PICK); the other American voices stay only for characters in a play (each character needs its own voice).
     const VOICES = [
       ["af_heart", "Heart", "Warm American woman", "A"], ["af_bella", "Bella", "Bright American woman", "A-"], ["af_nicole", "Nicole", "Soft American woman", "B-"],
-      ["am_michael", "Michael", "Calm American man", "C+"], ["am_fenrir", "Fenrir", "Deep American man", "C+"], ["am_puck", "Puck", "Lively American man", "C+"],
-      ["bf_emma", "Emma", "British woman", "B-"], ["bf_isabella", "Isabella", "British woman", "C"], ["bm_george", "George", "British man", "C"], ["bm_fable", "Fable", "British man", "C"],
-      ["af_aoede", "Aoede", "American woman", "C+"], ["af_kore", "Kore", "American woman", "C+"], ["af_sarah", "Sarah", "American woman", "C+"],
-      ["af_alloy", "Alloy", "American woman", "C"], ["af_nova", "Nova", "American woman", "C"], ["af_sky", "Sky", "American woman", "C-"],
-      ["bm_lewis", "Lewis", "British man", "D+"], ["am_echo", "Echo", "American man", "D"], ["am_eric", "Eric", "American man", "D"],
-      ["am_liam", "Liam", "American man", "D"], ["am_onyx", "Onyx", "American man", "D"], ["af_jessica", "Jessica", "American woman", "D"],
-      ["af_river", "River", "American woman", "D"], ["bf_alice", "Alice", "British woman", "D"], ["bf_lily", "Lily", "British woman", "D"],
-      ["bm_daniel", "Daniel", "British man", "D"], ["am_santa", "Santa", "American man", "D-"], ["am_adam", "Adam", "American man", "F+"]
+      ["am_michael", "Michael", "Calm American man", "C+"], ["am_fenrir", "Fenrir", "Deep American man", "C+"],
+      ["am_puck", "Puck", "Lively American man", "C+"], ["af_aoede", "Aoede", "American woman", "C+"], ["af_kore", "Kore", "American woman", "C+"],
+      ["af_sarah", "Sarah", "American woman", "C+"], ["af_alloy", "Alloy", "American woman", "C"], ["af_nova", "Nova", "American woman", "C"],
+      ["af_sky", "Sky", "American woman", "C-"], ["am_echo", "Echo", "American man", "D"], ["am_eric", "Eric", "American man", "D"],
+      ["am_liam", "Liam", "American man", "D"], ["am_onyx", "Onyx", "American man", "D"]
     ];
     // A helper that runs the model in its own background thread (Web Worker). Several of them speak different
     // sentences at the same time, which is how the natural voice can keep ahead of playback.
@@ -3402,7 +3401,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   // it has used in its own cache ("kokoro-voices"), so keeping them again would store them twice (the model is 84 MB).
   const NV_WARM = ["ort-plain.wasm", "ort-plain.mjs", "config.json", "tokenizer.json", "tokenizer_config.json"]
     .map(f => KOKORO.base + f).concat("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js");
-  const nvVoiceId = () => NV_IDS.has(settings.nvVoice) ? settings.nvVoice : "af_heart";
+  const nvVoiceId = () => KOKORO.VOICES.slice(0, 5).some(v => v[0] === settings.nvVoice) ? settings.nvVoice : "af_heart"; // v30: one of the 5 offered
   const nvVoiceRow = id => KOKORO.VOICES.find(v => v[0] === id) || KOKORO.VOICES[0];
   const nvVoiceName = id => nvVoiceRow(id)[1];
   const nvVoiceDesc = id => nvVoiceRow(id)[2];
@@ -3649,6 +3648,15 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); });
     });
   }
+  // How long a helper may take on one sentence before it is treated as stopped (and restarted).
+  // v27: 10× the sentence's length, at least 45 s. v30: on her iPhone that restarted a slow-but-working helper again
+  // and again ("the count keeps restarting"): each restart throws the work away and loads the voice again. Now:
+  // before this helper has made anything, wait up to 4 minutes; after that, 4× what its own measured speed says the
+  // sentence should take (at least 45 s).
+  function nvGenLimit(h, job) {
+    if (!h.rtf) return 240000;
+    return Math.max(45000, Math.min(600000, (job.est || 5) / h.rtf * 4000));
+  }
   function nvAssign(h, job) { if (!h || !job) return; h.job = job; job.t0 = Date.now(); nv.inflight.set(job.key, job); nvRun(h, job); }
   async function nvRun(h, job) {
     const t0 = performance.now();
@@ -3656,8 +3664,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       const outs = [];
       for (const p of job.pieces) {
         const a = nvGenArgs(p.text, p.voice);
-        // v27: a helper that hasn't answered in 10× the sentence's length (at least 45 s) is treated as stopped.
-        outs.push(await nvTimeout(h.w.gen(a.text, a.voice, a.speed), Math.max(45000, job.est * 10000)));
+        outs.push(await nvTimeout(h.w.gen(a.text, a.voice, a.speed), nvGenLimit(h, job)));
       }
       if (h.state === "dead" || h.job !== job) return;
       const sr = outs[0].sr || 24000, pcm = nvToPcm(outs.map(o => o.audio), Math.round(sr * 0.25));
@@ -3960,13 +3967,13 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       // The model may come from the browser's own copy (an earlier visit); then only the 22 MB runtime is downloaded.
       if (nv.dling && nv.dling.size) { const tot = nv.dlKinds.has("model") ? NV_BYTES : NV_ORT_BYTES; return `step 1 of 3: downloading the voice, ${Math.min(Math.round(nv.dl / 1e6), Math.round(tot / 1e6))} of ${Math.round(tot / 1e6)} MB`; }
       const t = nvSecs(nv.upT0 || nv.loadT0);
-      return `step 2 of 3: starting the voice · ${t} s${t >= 90 ? " (taking longer than it should)" : ""}`;
+      return `step 2 of 3: starting the voice · ${t} s${nv.deaths ? ` · try ${nv.deaths + 1}` : ""}${t >= 90 ? " (taking longer than it should)" : ""}`;
     }
     if (s === "ready" && !nv.madeAny) {
       const js = [...nv.inflight.values()].filter(j => j.t0);
       if (!js.length) return "step 3 of 3: making the first sentence";
       const t = nvSecs(Math.min(...js.map(j => j.t0)));
-      return `step 3 of 3: making the first sentence · ${t} s${t >= 60 ? " (this phone is slow at it)" : ""}`;
+      return `step 3 of 3: making the first sentence · ${t} s${nv.deaths ? ` · try ${nv.deaths + 1}` : ""}${t >= 60 ? " (this phone is slow at it)" : ""}`;
     }
     return "";
   }
@@ -4027,14 +4034,14 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   }
   function nvRenderState() { const el = $("nvState"); el.textContent = nvStateText(); el.classList.toggle("err", !!nv.failed); }
   // v28: 28 voices in four groups; tap a name to choose it (and hear it), or Listen to hear one without choosing it.
-  const NV_GROUPS = [["af", "American women"], ["am", "American men"], ["bf", "British women"], ["bm", "British men"]];
+  const NV_GROUPS = [["af", "Women"], ["am", "Men"]], NV_PICK = 5; // v30: only the first 5 voices are offered
   function renderNvVoices() {
     const box = $("nvList"), cur = nvVoiceId();
     box.innerHTML = "";
     for (const [pre, label] of NV_GROUPS) {
       const h = document.createElement("p"); h.className = "vlabel"; h.textContent = label; box.appendChild(h);
       const g = document.createElement("div"); g.className = "group";
-      for (const [id, name, desc, grade] of KOKORO.VOICES.filter(v => v[0].startsWith(pre + "_"))) {
+      for (const [id, name, desc, grade] of KOKORO.VOICES.slice(0, NV_PICK).filter(v => v[0].startsWith(pre + "_"))) {
         const row = document.createElement("div");
         row.className = "row vrow";
         row.innerHTML = '<button class="pick" role="radio"><span class="grow"><span class="nm"></span><small></small></span><span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span></button><button class="pbtn">Listen</button>';
@@ -4343,7 +4350,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function runVoiceTest() {
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
-    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 29</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 30</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
     document.body.appendChild(box);
     const now = box.querySelector("#vtNow"), list = box.querySelector("#vtLog"), end = box.querySelector("#vtEnd");
     const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
@@ -4472,7 +4479,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     (async () => {
       try {
         const keys = [...new URLSearchParams(location.search).keys()];
-        log(`Long Drive Reader file check · version 29 · ${new Date().toLocaleString()}`);
+        log(`Long Drive Reader file check · version 30 · ${new Date().toLocaleString()}`);
         log(`page path: ${location.pathname} · address query: ${keys.length ? keys.join(", ") : "none"} · cookies allowed: ${navigator.cookieEnabled} · readable cookies: ${document.cookie ? document.cookie.split(";").length : 0}`);
         log(`isolated=${self.crossOriginIsolated} · SharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"} · cores=${navigator.hardwareConcurrency} · memory≈${navigator.deviceMemory || "?"} GB`);
         log(`browser: ${navigator.userAgent}`);
