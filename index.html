@@ -321,7 +321,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       <h3>Use it like an app</h3>
       <p class="note">In Safari, tap the Share button, then Add to Home Screen. It opens straight to your last document, at the sentence where you stopped. For a proper icon instead of a blank one: save the Long Drive Reader icon to Photos, then in the Shortcuts app make a shortcut with the action "Open URLs" and this page's link, choose Add to Home Screen, and pick the icon from Photos.</p>
       <p class="note">On the website copy of this app (not inside claude.ai), the app keeps a copy of itself on the phone after a visit online, so it can open with no signal. Your Library readings are on the phone anyway.</p>
-      <p class="note">Version 32 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
+      <p class="note">Version 33 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
     </div>
   </div>
 </section>
@@ -3409,13 +3409,17 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   const NV_IDS = new Set(KOKORO.VOICES.map(v => v[0]));
   const NV_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   const NV_MAX = Math.max(1, Math.min(6, Math.floor((navigator.hardwareConcurrency || 2) / 2)));
-  const NV_SLOW_MSG = "This phone is slower than the voice. Tip: tap Prepare whole reading before you drive.";
+  const NV_IOS_MAX = Math.min(2, NV_MAX); // v33: tested on her iPhone (4 cores): 2 helpers ran together without crashing
+  const NV_SLOW_MSG ="This phone is slower than the voice. Tip: tap Prepare whole reading before you drive.";
   const nvAudio = $("nvAudio");
   const nv = {
     failed: false, why: "", everReady: false, deaths: 0, hid: 0, loader: null, dl: 0,
     // v27: one helper on iPhone/iPad. Each helper holds its own copy of the model, and on the owner's iPhone
     // "Prepare whole reading" stayed at 0% with more (unverified guess: Safari ran out of memory and stopped them).
-    maxN: NV_IOS ? 1 : NV_MAX, startN: NV_IOS ? 1 : NV_MAX,
+    // v33 (2026-11-14): that 0% turned out to be the words-to-sounds step hanging (fixed in v32), not memory. Her
+    // iPhone's v32 #voicetest: 1 helper 0.48× real time, 2 helpers together 0.81× (no crash). So iPhone starts with
+    // 1 helper (fastest first sentence) and adds a 2nd as soon as it falls behind. If one dies, it stays at what worked.
+    maxN: NV_IOS ? NV_IOS_MAX : NV_MAX, startN: NV_IOS ? 1 : NV_MAX,
     // v27: what the natural voice is doing, for the step-by-step status. loadT0 = first helper started,
     // upT0 = its download finished, bufT0 = playback started waiting, madeAny = a sentence was made on this visit.
     loadT0: 0, upT0: 0, bufT0: 0, madeAny: false, bridge: false, bridgeTimer: null, dling: new Set(), dlKinds: new Set(),
@@ -4104,7 +4108,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const wasPlaying = playing;
     if (wasPlaying) pause();
     settings.natural = on; saveSettings(); partsCache.clear();
-    if (on) { nv.failed = false; nv.why = ""; nv.deaths = 0; nv.slowShown = false; nv.bridge = false; nv.maxN = NV_IOS ? 1 : NV_MAX; }
+    if (on) { nv.failed = false; nv.why = ""; nv.deaths = 0; nv.slowShown = false; nv.bridge = false; nv.maxN = NV_IOS ? NV_IOS_MAX : NV_MAX; }
     else { nvShutdown(); nvClearMine(); }
     renderVoiceSection(); renderCast(); syncSettingsUI();
     if (wasPlaying) speakFrom(idx);
@@ -4382,7 +4386,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function runVoiceTest() {
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
-    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 32</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 33</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
     document.body.appendChild(box);
     const now = box.querySelector("#vtNow"), list = box.querySelector("#vtLog"), end = box.querySelector("#vtEnd");
     const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
@@ -4461,7 +4465,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         }
         const best = Math.max(sp, sp2);
         add(best >= r * 1.1 ? `Fast enough to read live at ${r}× speed${sp2 > sp * 1.1 ? " with two helpers" : ""}.`
-          : `Too slow to read live at ${r}× speed. "Prepare whole reading" would take about ${Math.round(30 / sp)} min for 30 min of listening (at 1×); start it at home, then listen.`);
+          : `Too slow to read live at ${r}× speed. "Prepare whole reading" would take about ${Math.round(30 / best)} min for 30 min of listening (at 1×${sp2 > sp * 1.1 ? ", two helpers" : ""}); start it at home, then listen.`);
         finish(`Finished · ${sp.toFixed(2)}× real time`);
       } catch (e) {
         add(`Stopped while ${stage} (after ${sec(st)} s): ${nvWhy(e)}`);
@@ -4540,7 +4544,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     (async () => {
       try {
         const keys = [...new URLSearchParams(location.search).keys()];
-        log(`Long Drive Reader file check · version 32 · ${new Date().toLocaleString()}`);
+        log(`Long Drive Reader file check · version 33 · ${new Date().toLocaleString()}`);
         log(`page path: ${location.pathname} · address query: ${keys.length ? keys.join(", ") : "none"} · cookies allowed: ${navigator.cookieEnabled} · readable cookies: ${document.cookie ? document.cookie.split(";").length : 0}`);
         log(`isolated=${self.crossOriginIsolated} · SharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"} · cores=${navigator.hardwareConcurrency} · memory≈${navigator.deviceMemory || "?"} GB`);
         log(`browser: ${navigator.userAgent}`);
