@@ -117,6 +117,20 @@ body.drag .open { border-color: var(--ink); }
 .gear { justify-self: end; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; }
 .gear svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 @media (max-width: 360px) { .controls { gap: 8px; } }
+/* v34: the speed panel that opens from the speed button */
+.speed-scrim { position: fixed; inset: 0; z-index: 40; background: transparent; }
+.speed-pop { position: fixed; left: 50%; transform: translateX(-50%); width: min(420px, calc(100% - 32px)); z-index: 41;
+  background: var(--sheet); border: 1px solid var(--line); border-radius: 16px; padding: 14px 14px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+.speed-top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.speed-top span { font-size: 13px; color: var(--muted); font-weight: 600; }
+.speed-top output { font-size: 26px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.speed-row { display: flex; align-items: center; gap: 10px; }
+.speed-row input { flex: 1; accent-color: var(--ink); height: 32px; }
+.speed-step { width: 44px; height: 44px; border-radius: 50%; background: var(--bg); border: 1px solid var(--line); font-size: 22px; font-weight: 700; line-height: 1; }
+.speed-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.speed-chips button { flex: 1 0 auto; min-width: 48px; padding: 8px 6px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font-weight: 650; font-size: 14px; font-variant-numeric: tabular-nums; }
+.speed-chips button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.speed-pop .note { margin: 8px 2px 0; font-size: 12px; color: var(--muted); }
 
 /* Settings sheet */
 .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 20; }
@@ -235,6 +249,17 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   </footer>
 </div>
 
+<div class="speed-scrim" id="speedScrim" hidden></div>
+<div class="speed-pop" id="speedPop" role="dialog" aria-label="Speed" hidden>
+  <div class="speed-top"><span>Speed</span><output id="spOut">1×</output></div>
+  <div class="speed-row">
+    <button class="speed-step" id="spDown" aria-label="Slower">−</button>
+    <input type="range" id="spRange" min="0.5" max="3" step="0.05" value="1" aria-label="Speed">
+    <button class="speed-step" id="spUp" aria-label="Faster">+</button>
+  </div>
+  <div class="speed-chips" id="spChips"></div>
+  <p class="note" id="spNote" hidden></p>
+</div>
 <div class="scrim" id="scrim" hidden></div>
 <section class="sheet gutter" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
   <div class="sheet-in">
@@ -255,6 +280,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         <p class="note" id="nvState"></p>
         <div id="nvList" role="radiogroup" aria-label="Natural voice"></div>
         <label class="row" for="nvBridge" style="padding-inline:0"><span class="grow">Don't wait for it<small>Reads with the phone voice while the natural voice gets ready, then switches by itself between two sentences.</small></span><span class="switch"><input type="checkbox" id="nvBridge"><span></span></span></label>
+        <label class="row" for="nvFast" style="padding-inline:0"><span class="grow">Faster at high speeds<small>Above 1×, the voice itself speaks faster instead of the sound being sped up. Takes about half the work at 2×, so it keeps up better. The pitch doesn't change.</small></span><span class="switch"><input type="checkbox" id="nvFast"><span></span></span></label>
         <div class="group" id="nvPrepGroup"><div class="row"><span class="grow">Prepare whole reading<small id="nvPrepSub"></small></span><button class="pbtn" id="nvPrepBtn">Prepare</button></div></div>
       </div>
       <div id="phoneBox" class="sec">
@@ -321,7 +347,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       <h3>Use it like an app</h3>
       <p class="note">In Safari, tap the Share button, then Add to Home Screen. It opens straight to your last document, at the sentence where you stopped. For a proper icon instead of a blank one: save the Long Drive Reader icon to Photos, then in the Shortcuts app make a shortcut with the action "Open URLs" and this page's link, choose Add to Home Screen, and pick the icon from Photos.</p>
       <p class="note">On the website copy of this app (not inside claude.ai), the app keeps a copy of itself on the phone after a visit online, so it can open with no signal. Your Library readings are on the phone anyway.</p>
-      <p class="note">Version 33 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
+      <p class="note">Version 34 · 14 Nov 2026. If this says an older number, tap Safari's reload button.</p>
     </div>
   </div>
 </section>
@@ -2321,6 +2347,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   });
   $("sayNames").addEventListener("change", e => { settings.sayNames = e.target.checked; saveSettings(); partsCache.clear(); });
   $("nvBridge").addEventListener("change", e => { settings.nvBridge = e.target.checked; saveSettings(); });
+  $("nvFast").addEventListener("change", e => { settings.nvFast = e.target.checked; saveSettings(); nvPump(); });
 
   let playing = false, runId = 0, pIdx = 0, errCount = 0, timer = null, live = null, speedTimer = null;
   let ended = false; // played to the end: the place stays at the end, and play starts the reading again from the top
@@ -2561,7 +2588,6 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   // =====================================================================
   // Speed button, settings sheet
   // =====================================================================
-  const SPEEDS = [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2, 2.5, 3]; // the speed button; 2.5× and 3× only with the natural voice
   function syncSettingsUI() {
     $("speedBtn").textContent = (Math.round(settings.rate * 100) / 100).toString() + "×";
     $("rate").value = settings.rate; $("rateOut").textContent = Number(settings.rate).toFixed(2) + "×";
@@ -2576,20 +2602,46 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     document.querySelectorAll("#engineSeg button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.v === "natural") === !!settings.natural)));
     $("sayNames").checked = sayNamesNow();
     $("nvBridge").checked = settings.nvBridge !== false;
+    $("nvFast").checked = settings.nvFast !== false;
+    renderSpeedPop();
     updateProgress();
   }
   function setRate(r, restart) {
     settings.rate = Math.round(r * 100) / 100; saveSettings(); syncSettingsUI();
     // Natural voice: the audio element changes speed at once, keeping its pitch (no restart needed).
-    if (useNatural()) { nvApplyRate(nvAudio, settings.rate); return; }
+    if (useNatural()) { nvApplyRate(nvAudio, nvClipRate({ spd: nv.curSpd })); return; }
     // (hardStop clears this timer, so pausing right after a speed tap stays paused.)
     if (restart && playing) { clearTimeout(speedTimer); speedTimer = setTimeout(() => { if (playing) speakFrom(idx); }, 250); }
   }
-  $("speedBtn").addEventListener("click", () => {
-    const list = SPEEDS.filter(s => settings.natural || s <= PHONE_MAX);
-    const next = list.find(s => s > settings.rate + 0.001) || list[0];
-    setRate(next, true);
-  });
+  // v34 (2026-11-14, her request): the speed button opens a small panel with a slider (0.5× up to 2×, or 3× with
+  // the natural voice), − and + buttons (0.1× steps) and quick picks. Tap outside it to close.
+  const SP_CHIPS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+  const spMax = () => settings.natural ? 3 : PHONE_MAX;
+  const spClamp = r => Math.min(spMax(), Math.max(0.5, Math.round(r * 100) / 100));
+  function renderSpeedPop() {
+    if ($("speedPop").hidden) return;
+    const r = settings.rate, max = spMax();
+    $("spOut").textContent = (Math.round(r * 100) / 100) + "×";
+    $("spRange").max = String(max); $("spRange").value = String(Math.min(r, max));
+    $("spDown").disabled = r <= 0.5; $("spUp").disabled = r >= max;
+    $("spChips").innerHTML = SP_CHIPS.filter(s => s <= max).map(s => `<button data-v="${s}" aria-pressed="${Math.abs(s - r) < 0.001}">${s}×</button>`).join("");
+    const note = r > PHONE_MAX && !settings.natural ? `The phone voice reads at most ${PHONE_MAX}×.` : "";
+    $("spNote").textContent = note; $("spNote").hidden = !note;
+  }
+  function openSpeed() {
+    const foot = document.querySelector(".player").getBoundingClientRect();
+    $("speedPop").style.bottom = Math.max(8, window.innerHeight - foot.top + 8) + "px";
+    $("speedPop").hidden = false; $("speedScrim").hidden = false; renderSpeedPop();
+  }
+  function closeSpeed() { $("speedPop").hidden = true; $("speedScrim").hidden = true; }
+  $("speedBtn").addEventListener("click", () => { $("speedPop").hidden ? openSpeed() : closeSpeed(); });
+  $("speedScrim").addEventListener("click", closeSpeed);
+  $("spRange").addEventListener("input", () => setRate(spClamp(Number($("spRange").value)), false));
+  $("spRange").addEventListener("change", () => setRate(spClamp(Number($("spRange").value)), true));
+  $("spDown").addEventListener("click", () => setRate(spClamp(Math.round((settings.rate - 0.1) * 10) / 10), true));
+  $("spUp").addEventListener("click", () => setRate(spClamp(Math.round((settings.rate + 0.1) * 10) / 10), true));
+  $("spChips").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setRate(Number(b.dataset.v), true); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("speedPop").hidden) closeSpeed(); });
   $("rate").addEventListener("input", () => setRate(Number($("rate").value), false));
   $("rate").addEventListener("change", () => setRate(Number($("rate").value), true));
   $("pauseSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; settings.pauses = b.dataset.v; saveSettings(); syncSettingsUI(); });
@@ -3135,6 +3187,9 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         "RIFF,42,WAVE,fmt ,16,1,1,24000,48000,2,16,data,6,44,54");
       eq("natural: samples to 16-bit (clipped), pieces joined with a gap", Array.from(nvToPcm([Float32Array.of(0, 0.5, -1, 2), Float32Array.of(-3)], 2)).join(","), "0,16384,-32767,32767,0,0,-32767");
       settings.rate = 1.2; settings.pauses = "natural";
+      eq("natural: made faster above 1× (Kokoro speed for 0.5/1/1.2/1.3/1.6/2/3×, off at 2×)",
+        [0.5, 1, 1.2, 1.3, 1.6, 2, 3].map(r => nvSpdFor(r)).join(",") + "|" + nvSpdFor(2, false), "1,1,1,1.25,1.5,2,2|1");
+      eq("natural: a clip made at speed 2 plays at 2×/1.79 to be heard at 2×", Math.round(2 / nvEff(2) * 100) / 100, 1.12);
       eq("natural: pause after a sentence at 1.2× (460 ms / 1.2 heard)", nvSilenceSamples(gapAfter("It ended.", true, false), 24000, 1.2), 11040);
       eq("natural: pause before a new page at 1.2× (1000 ms / 1.2 heard)", nvSilenceSamples(gapAfter("It ended.", true, true), 24000, 1.2), 24000);
       settings.nvVoice = "af_heart"; settings.nvCast = {}; settings.sayNames = null;
@@ -3304,7 +3359,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       const base = ${JSON.stringify(base)};
       const SOUNDS = ${JSON.stringify(SOUNDS)};
       let g2pP = null;
-      const PARTS = { model: [0,1,2,3,4,5,6].map(i => "model.part" + i + ".wasm"), ort: ["ort-plain.wasm"] };
+      const PARTS = { model: [0,1,2,3,4,5,6].map(i => "model.part" + i + ".wasm"), ort: ["ort-plain.wasm"], jsep: ["ort.part0.wasm", "ort.part1.wasm"] };
       const of = self.fetch.bind(self), joined = {};
       async function readAll(r) {
         if (!r.body || !r.body.getReader) { const b = await r.arrayBuffer(); self.postMessage({ progress: b.byteLength }); return b; }
@@ -3325,6 +3380,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       self.fetch = async (input, init) => {
         const u = String(input && input.url || input); let m;
         if (/model_quantized\\.onnx/.test(u)) return new Response(await join("model"), { headers: { "Content-Type": "application/octet-stream" } });
+        if (/ort-jsep\\.wasm/.test(u)) return new Response(await join("jsep"), { headers: { "Content-Type": "application/wasm" } });
         if (/ort-plain\\.wasm|ort-wasm-simd-threaded\\.jsep\\.wasm/.test(u)) return new Response(await join("ort"), { headers: { "Content-Type": "application/wasm" } });
         if ((m = /Kokoro-82M-v1\\.0-ONNX\\/resolve\\/main\\/(config\\.json|tokenizer\\.json|tokenizer_config\\.json)/.exec(u))) return of(base + m[1]);
         if ((m = /Kokoro-82M-v1\\.0-ONNX\\/resolve\\/main\\/voices\\/([a-z]{2}_[a-z]+)\\.bin/.exec(u))) return of(base + "voices/" + m[1] + ".wasm");
@@ -3333,9 +3389,14 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
       let ttsP = null;
       function tts() {
         if (!ttsP) ttsP = (async () => {
-          const mod = await import("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js");
-          mod.env.wasmPaths = { mjs: base + "ort-plain.mjs", wasm: base + "ort-plain.wasm" };
-          return mod.KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", { dtype: "q8", device: "wasm" });
+          // v34: kokoro-js 1.2.1 from kokoro/kokoro-web.mjs (the same file as on jsdelivr, plus one export, "tenv",
+          // so the number of threads can be set). OPTS.gpu = the phone's graphics chip (WebGPU) with the full-size
+          // model from huggingface.co (326 MB, the one kokoro-js names for WebGPU) and the runtime build that has WebGPU.
+          const mod = await import(base + "kokoro-web.mjs");
+          if (OPTS.gpu && !(self.navigator && self.navigator.gpu)) throw new Error("this browser has no WebGPU in a helper");
+          mod.env.wasmPaths = OPTS.gpu ? { mjs: base + "ort-wasm-simd-threaded.jsep.mjs", wasm: base + "ort-jsep.wasm" } : { mjs: base + "ort-plain.mjs", wasm: base + "ort-plain.wasm" };
+          if (mod.tenv && OPTS.threads) mod.tenv.backends.onnx.wasm.numThreads = OPTS.threads;
+          return mod.KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", OPTS.gpu ? { dtype: "fp32", device: "webgpu" } : { dtype: "q8", device: "wasm" });
         })();
         return ttsP;
       }
@@ -3372,7 +3433,8 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     // opts.onProgress(bytes) = more of the model downloaded; opts.onDead(error) = the helper crashed.
     function makeWorker(opts) {
       opts = opts || {};
-      const w = new Worker(URL.createObjectURL(new Blob([WORKER_SRC], { type: "text/javascript" })), { type: "module" });
+      const head = "const OPTS = " + JSON.stringify({ gpu: !!opts.gpu, threads: opts.threads || 1 }) + ";\n";
+      const w = new Worker(URL.createObjectURL(new Blob([head + WORKER_SRC], { type: "text/javascript" })), { type: "module" });
       let n = 0; const waiting = new Map();
       w.onmessage = e => {
         const d = e.data || {};
@@ -3436,7 +3498,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     // v32: the JavaScript words-to-sounds files (used on iPhone)
     "g2p/say.mjs?v=32", "g2p/index.mjs", "g2p/core.mjs", "g2p/en-g2p.mjs", "g2p/utils-Bo_ZN3X7.mjs", "g2p/anyascii.mjs",
     "g2p/en/exceptions.mjs", "g2p/en/initialisms.mjs", "g2p/en/homographs.mjs", "g2p/en/compound-parts.mjs"]
-    .map(f => KOKORO.base + f).concat("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js");
+    .map(f => KOKORO.base + f).concat(KOKORO.base + "kokoro-web.mjs"); // v34: the helpers load kokoro-js from here
   const nvVoiceId = () => KOKORO.VOICES.slice(0, 5).some(v => v[0] === settings.nvVoice) ? settings.nvVoice : "af_heart"; // v30: one of the 5 offered
   const nvVoiceRow = id => KOKORO.VOICES.find(v => v[0] === id) || KOKORO.VOICES[0];
   const nvVoiceName = id => nvVoiceRow(id)[1];
@@ -3448,7 +3510,17 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   // --- Pure parts (checked by the self-test) ---
   // VOICE QUALITY RULE: the natural voice is always asked for at speed 1 and never given a pitch; the listening
   // speed comes from the player, which keeps the pitch (preservesPitch).
-  function nvGenArgs(text, voice) { return { text, voice, speed: 1 }; }
+  // v34 (2026-11-14): above 1×, Kokoro is asked to speak faster itself (its own "speed"), and playbackRate does the
+  // rest. The model's work grows with the length of the audio it makes, so this needs less work: in laptop Chrome,
+  // 12 sentences (af_heart, am_michael) came out this much faster than at speed 1 (NV_EFF), and took about as much
+  // less time to make. The pitch is unchanged. Setting "Faster at high speeds" (settings.nvFast, on unless turned off).
+  // Below 1× the voice is made at 1 and slowed by playbackRate (making it slower would only cost more work).
+  const NV_EFF = { 1: 1, 1.25: 1.15, 1.5: 1.55, 1.75: 1.65, 2: 1.79 };
+  function nvSpdFor(rate, on) { return on === false || !(rate > 1.1) ? 1 : Math.min(2, Math.floor(rate * 4 + 1e-6) / 4); }
+  const nvEff = s => NV_EFF[s] || 1;
+  function nvGenArgs(text, voice, spd) { return { text, voice, speed: spd || 1 }; }
+  // The playback rate for a clip made at Kokoro speed `spd`, so that it is heard at the listening speed.
+  const nvClipRate = c => settings.rate / nvEff(c && c.spd || 1);
   function nvApplyRate(el, rate) {
     try { el.preservesPitch = true; el.webkitPreservesPitch = true; el.mozPreservesPitch = true; el.defaultPlaybackRate = rate; el.playbackRate = rate; } catch {}
   }
@@ -3696,18 +3768,20 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function nvAssign(h, job) { if (!h || !job) return; h.job = job; job.t0 = Date.now(); nv.inflight.set(job.key, job); nvRun(h, job); }
   async function nvRun(h, job) {
     const t0 = performance.now();
+    const spd = job.say ? 1 : nvSpdFor(settings.rate, settings.nvFast); // v34: voice samples stay at the normal pace
     try {
       const outs = [];
       for (const p of job.pieces) {
-        const a = nvGenArgs(p.text, p.voice);
+        const a = nvGenArgs(p.text, p.voice, spd);
         outs.push(await nvTimeout(h.w.gen(a.text, a.voice, a.speed), nvGenLimit(h, job)));
       }
       if (h.state === "dead" || h.job !== job) return;
-      const sr = outs[0].sr || 24000, pcm = nvToPcm(outs.map(o => o.audio), Math.round(sr * 0.25));
-      const took = (performance.now() - t0) / 1000, dur = pcm.length / sr;
+      const sr = outs[0].sr || 24000, pcm = nvToPcm(outs.map(o => o.audio), Math.round(sr * 0.25 / nvEff(spd)));
+      // dur = how long it lasts at 1× (what the planning counts in), so a clip made faster counts as the same speech
+      const took = (performance.now() - t0) / 1000, dur = pcm.length / sr * nvEff(spd);
       if (took > 0.05) h.rtf = h.rtf ? h.rtf * 0.6 + dur / took * 0.4 : dur / took; // measured speed of this helper
       h.job = null; nv.inflight.delete(job.key); nv.fails.delete(job.key);
-      nvDone(job, { pcm, sr, dur });
+      nvDone(job, { pcm, sr, dur, spd });
     } catch (e) {
       if (h.state === "dead" || h.job !== job) return;
       const msg = nvWhy(e);
@@ -3748,7 +3822,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const st = nv.stored;
     audioDb.get(key).then(rec => {
       if (!rec || !rec.pcm) { st.set.delete(key); return; }
-      const pcm = new Int16Array(rec.pcm), sr = rec.sr || 24000, c = { pcm, sr, dur: pcm.length / sr };
+      const spd = NV_EFF[rec.spd] ? rec.spd : 1, pcm = new Int16Array(rec.pcm), sr = rec.sr || 24000, c = { pcm, sr, dur: pcm.length / sr * nvEff(spd), spd };
       if (nv.winKeys.has(key) || nv.waitKey === key) nv.mem.set(key, c);
       if (nv.waitKey === key && nv.cur && nv.cur.key === key) nvStartChunk(c, nv.cur.job, nv.cur.my);
     }, e => { console.warn(e); st.set.delete(key); })
@@ -3759,7 +3833,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     if (p && p.cancelled) return;
     const buf = c.pcm.byteOffset === 0 && c.pcm.byteLength === c.pcm.buffer.byteLength ? c.pcm.buffer : c.pcm.slice().buffer;
     if (p) p.puts++;
-    audioDb.put({ id: job.key, rk: job.rk, v: job.v, i: job.i, sr: c.sr, pcm: buf }).then(() => {
+    audioDb.put({ id: job.key, rk: job.rk, v: job.v, i: job.i, sr: c.sr, spd: c.spd || 1, pcm: buf }).then(() => {
       if (p) p.puts--;
       if (nv.stored.prefix && job.key.startsWith(nv.stored.prefix)) nv.stored.set.add(job.key);
       if (p && !p.some) { p.some = true; libPatch(job.rk, { nvSome: true }); }
@@ -3936,7 +4010,8 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const warm = !wantPlay && nvAlive().some(h => h.state === "ready"); // paused: have the next sentence ready
     const target = wantPlay ? NV_TARGET : warm ? 15 : 0, cap = wantPlay ? NV_CAP : target;
     // While the phone voice reads sentence idx, the natural voice starts with the one after it.
-    const from = n ? Math.min(nv.bridge && playing ? nvNextUnit(doc, idx) : idx, n - 1) : 0;
+    // v34: … from the point chosen by nvAim (far enough ahead to be ready in time).
+    const from = n ? Math.min(nv.bridge && playing ? nvAim() : idx, n - 1) : 0;
     const chain = n && cap > 0 ? nvChain(doc, from, cap) : [];
     if (wantPlay) nv.winKeys = new Set(chain.map(u => u.key)); else for (const u of chain) nv.winKeys.add(u.key);
     // 1. Prepared audio: read it from storage (no helper needed).
@@ -4037,7 +4112,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   // v27: the phone voice stands in while the natural voice gets ready (setting "Don't wait for it").
   function nvBridge() {
     if (!playing || nv.bridge || !synth || settings.nvBridge === false) return;
-    nv.bridge = true;
+    nv.bridge = true; nv.aimI = null;
     speakFrom(idx); // useNatural() is false now, so this is the phone voice
     nvStatus(); nvPump();
   }
@@ -4049,7 +4124,25 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     if (!chain.length || !nv.mem.has(chain[0].key)) return false;
     // (v27 test: with "fast enough" alone it took over with too little made and had to wait at once.)
     const ahead = nvAhead(chain);
-    return ahead >= 45 || (ahead >= 20 && nvSpeed() >= settings.rate * 1.05);
+    // v34: or the phone voice has reached the point the natural voice started from (nvAim) with some made after it
+    return ahead >= 45 || (ahead >= 20 && nvSpeed() >= settings.rate * 1.05) || (nv.aimI != null && idx >= nv.aimI && ahead >= 12);
+  }
+  // v34 (2026-11-14): where the natural voice starts while the phone voice reads. Before, it started with the very
+  // next sentence; a helper needs longer for one sentence than the phone voice needs to read it (iPhone: about 12 s
+  // for a 5 s sentence), so each finished sentence had already been read and was thrown away, and the natural voice
+  // never took over (seen at 2× in laptop Chrome: nothing kept for 40 s while 6 helpers worked). Now it starts far
+  // enough ahead that its first sentences are done before the phone voice gets there, and keeps that point until
+  // the phone voice reaches it (then it takes over, or picks a new point further on).
+  function nvAim() {
+    if (nv.aimI != null && nv.aimI > idx) return nv.aimI;
+    const ready = Math.max(1, nvAlive().filter(h => h.state === "ready").length);
+    const per = nvSpeed() > 0 ? nvSpeed() / ready : 0.4; // one helper's speed (1× seconds made per second)
+    const lead = listenRate() * (6 / per * 1.3 + 3);    // seconds of reading (at 1×) the phone voice covers meanwhile
+    const S = doc.sentences;
+    let i = nvNextUnit(doc, idx), sum = 0;
+    while (i < S.length - 1 && sum < lead) { const j = nvJob(doc, i); sum += j ? j.est : 0; i = nvNextUnit(doc, i); }
+    nv.aimI = Math.min(i, S.length - 1);
+    return nv.aimI;
   }
   function nvStateText() {
     const s = nvStateNow();
@@ -4140,13 +4233,13 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     }
     return nvSilenceUrl;
   }
-  function nvPlayUrl(url, mode, my) {
+  function nvPlayUrl(url, mode, my, c) {
     const old = nv.url;
-    nv.mode = mode; nv.started = false; nv.url = url;
+    nv.mode = mode; nv.started = false; nv.url = url; nv.curSpd = c && c.spd || 1;
     try {
       nvAudio.loop = mode === "silence";
       if (nvAudio.getAttribute("src") !== url) nvAudio.src = url;
-      nvApplyRate(nvAudio, settings.rate);
+      nvApplyRate(nvAudio, nvClipRate(c));
       const p = nvAudio.play();
       if (p && p.catch) p.catch(e => nvPlayRejected(e, my, url));
     } catch (e) { nvPlayRejected(e, my, url); }
@@ -4211,7 +4304,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     if (my !== runId || !nv.cur || nv.cur.key !== job.key) return;
     nv.waitKey = null;
     if (nv.buffering) { nv.buffering = false; nvClearMine(loading ? recognizingMsg(loading.done + 1, loading.total) : ""); }
-    nvPlayUrl(URL.createObjectURL(nvWavBlob(c.pcm, c.sr, nvSilenceSamples(nvGapMs(doc, job.i), c.sr, settings.rate))), "speech", my);
+    nvPlayUrl(URL.createObjectURL(nvWavBlob(c.pcm, c.sr, nvSilenceSamples(nvGapMs(doc, job.i), c.sr, nvClipRate(c)))), "speech", my, c);
     nv.recent.push(job.key); if (nv.recent.length > 3) nv.recent.shift();
     nvPump();
   }
@@ -4238,7 +4331,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     const s = nv.say;
     if (!s || s.my !== runId) return;
     if (!s.quiet) nvClearMine();
-    nvPlayUrl(URL.createObjectURL(nvWavBlob(c.pcm, c.sr, 0)), "say", s.my);
+    nvPlayUrl(URL.createObjectURL(nvWavBlob(c.pcm, c.sr, 0)), "say", s.my, c);
   }
   nvAudio.addEventListener("playing", () => { nv.started = true; });
   nvAudio.addEventListener("ended", () => {
@@ -4386,7 +4479,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
   function runVoiceTest() {
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;z-index:99;overflow:auto;background:var(--bg);color:var(--ink);padding:18px 16px 40px;font:15px/1.45 system-ui,-apple-system,sans-serif";
-    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 33</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 1–4 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
+    box.innerHTML = '<h2 style="margin:0 0 4px;font-size:20px">Natural voice test · version 34</h2><p style="margin:0 0 14px;color:var(--muted)">Keep this screen on. It takes 2–6 minutes. When it says Done, take a screenshot and send it to Claude.</p><div id="vtNow" style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;font-weight:600"></div><ol id="vtLog" style="margin:0;padding-left:22px"></ol><p id="vtEnd" style="font-weight:600"></p>';
     document.body.appendChild(box);
     const now = box.querySelector("#vtNow"), list = box.querySelector("#vtLog"), end = box.querySelector("#vtEnd");
     const add = s => { const li = document.createElement("li"); li.textContent = s; li.style.marginBottom = "6px"; list.appendChild(li); };
@@ -4447,26 +4540,38 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
         const url = URL.createObjectURL(nvWavBlob(nvToPcm([b.audio], 0), b.sr, 0));
         btn.onclick = () => { const au = new Audio(url); au.play().catch(() => {}); };
         box.appendChild(btn);
-        // E: a second helper at the same time (the app uses one on iPhone). Shows whether two together would keep up.
-        let sp2 = 0;
-        if (NV_IOS) {
-          stage = "test E: two helpers at the same time (a crash here is useful to know too)"; st = performance.now();
-          let w2 = null;
-          try {
-            w2 = KOKORO.makeWorker({ onDead: () => {} });
-            await w2.ready();
-            const te = performance.now();
-            const both = await Promise.all([w.genIds(IDS2, "af_heart"), w2.genIds(IDS2, "af_heart")]);
-            const spoken = both.reduce((s, x) => s + x.audio.length / x.sr, 0);
-            sp2 = spoken / ((performance.now() - te) / 1000);
-            add(`E. Two helpers together: ${spoken.toFixed(1)} s of speech made in ${sec(te)} s → ${sp2.toFixed(2)}× real time`);
-          } catch (e2) { add(`E. Two helpers together didn't work: ${nvWhy(e2)}`); }
-          finally { if (w2) w2.stop(); }
-        }
-        const best = Math.max(sp, sp2);
-        add(best >= r * 1.1 ? `Fast enough to read live at ${r}× speed${sp2 > sp * 1.1 ? " with two helpers" : ""}.`
-          : `Too slow to read live at ${r}× speed. "Prepare whole reading" would take about ${Math.round(30 / best)} min for 30 min of listening (at 1×${sp2 > sp * 1.1 ? ", two helpers" : ""}); start it at home, then listen.`);
-        finish(`Finished · ${sp.toFixed(2)}× real time`);
+        // v34: E (two helpers) is known from her v32 run (0.81×), so it is skipped. F: the graphics chip (WebGPU).
+        // In laptop Chrome it made 7.5 s of speech in 0.66 s (11× real time) against 0.43× on the processor.
+        // It downloads the full-size model (326 MB) from huggingface.co once. It runs in its own helper, last, and is
+        // stopped after 6 minutes, so a hang here can't spoil A–D.
+        w.stop(); w = null; // free the processor helper's memory first
+        let spG = 0;
+        stage = "test F: the phone's graphics chip (downloads 326 MB once — keep the screen on)"; st = performance.now();
+        let wg = null;
+        try {
+          if (!navigator.gpu) throw new Error("this browser has no WebGPU");
+          let gpuDead = null;
+          wg = KOKORO.makeWorker({ gpu: true, onDead: e => { gpuDead = e; } });
+          const lim = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(gpuDead ? nvWhy(gpuDead) : what + " took over " + Math.round(ms / 60000) + " min")), ms))]);
+          await lim(wg.ready(), 360000, "downloading and starting");
+          add(`F. Graphics chip ready after ${sec(st)} s (download + start-up)`);
+          const tg1 = performance.now(), g1 = await lim(wg.genIds(IDS1, "af_heart"), 120000, "the first sentence");
+          add(`F. Graphics chip, short sentence: ${(g1.audio.length / g1.sr).toFixed(1)} s of speech made in ${sec(tg1)} s`);
+          const tg2 = performance.now(), g2 = await lim(wg.genIds(IDS2, "af_heart"), 120000, "the long sentence");
+          spG = (g2.audio.length / g2.sr) / ((performance.now() - tg2) / 1000);
+          add(`F. Graphics chip, long sentence: ${(g2.audio.length / g2.sr).toFixed(1)} s of speech made in ${sec(tg2)} s → ${spG.toFixed(2)}× real time`);
+          const b2 = document.createElement("button");
+          b2.textContent = "Hear the graphics-chip sentence"; b2.className = "pbtn"; b2.style.margin = "8px 0 0 8px";
+          const url2 = URL.createObjectURL(nvWavBlob(nvToPcm([g2.audio], 0), g2.sr, 0));
+          b2.onclick = () => { const au = new Audio(url2); au.play().catch(() => {}); };
+          box.appendChild(b2);
+        } catch (eg) { add(`F. Graphics chip didn't work: ${nvWhy(eg)}`); }
+        finally { if (wg) wg.stop(); }
+        const best = Math.max(sp, spG);
+        add(spG >= 2.2 ? `The graphics chip is fast enough for 2× live (${spG.toFixed(1)}× real time). Listen to its sentence: if it sounds right, the next version uses it.`
+          : best >= r * 1.1 ? `Fast enough to read live at ${r}× speed.`
+          : `Too slow to read live at ${r}× speed. "Prepare whole reading" would take about ${Math.round(30 / Math.max(best, 0.81))} min for 30 min of listening (at 1×, two helpers); start it at home, then listen.`);
+        finish(`Finished · processor ${sp.toFixed(2)}× · graphics chip ${spG ? spG.toFixed(2) + "×" : "didn't work"}`);
       } catch (e) {
         add(`Stopped while ${stage} (after ${sec(st)} s): ${nvWhy(e)}`);
         finish(`Stopped while ${stage}.`);
@@ -4544,7 +4649,7 @@ textarea#txtOut { width: 100%; min-height: 200px; resize: vertical; border: 1px 
     (async () => {
       try {
         const keys = [...new URLSearchParams(location.search).keys()];
-        log(`Long Drive Reader file check · version 33 · ${new Date().toLocaleString()}`);
+        log(`Long Drive Reader file check · version 34 · ${new Date().toLocaleString()}`);
         log(`page path: ${location.pathname} · address query: ${keys.length ? keys.join(", ") : "none"} · cookies allowed: ${navigator.cookieEnabled} · readable cookies: ${document.cookie ? document.cookie.split(";").length : 0}`);
         log(`isolated=${self.crossOriginIsolated} · SharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"} · cores=${navigator.hardwareConcurrency} · memory≈${navigator.deviceMemory || "?"} GB`);
         log(`browser: ${navigator.userAgent}`);
